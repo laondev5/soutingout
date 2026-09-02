@@ -115,3 +115,32 @@ edits the registration questions. Both are super-admin only.
   id verbatim.
 - **Pagination is always rendered**, even on a single page. Hiding it left no
   visible sign the list was paginated and no way to change the page size.
+
+## Payment reconciliation without a frequent cron
+
+Vercel's Hobby plan allows **one cron run per day**, so a `*/10 * * * *`
+schedule is rejected at deploy time. Reconciliation therefore runs from three
+places, all sharing `reconcilePayments()` in `src/lib/reconcile.ts`:
+
+1. **The Paystack webhook** — the primary path, settles in seconds.
+2. **Server rendering** — `sweepPaymentsInBackground()` in the dashboard and
+   pastor layouts and on `/status`. It uses `after()` from `next/server`, so
+   the work runs on the server *after* the response is sent: no page latency,
+   and still nothing triggered from the browser.
+3. **A daily cron** at 02:00 — the backstop for a quiet day when nobody opens
+   the dashboard.
+
+Guards that matter:
+
+- **One sweep per interval, cluster-wide.** `claimSweep()` conditionally
+  updates a single lock document, so concurrent renders cannot all sweep.
+  Verified: 1 winner from 10 simultaneous callers, 0 while held. The first
+  ever call can race on upsert, and the loser's duplicate-key error is caught
+  and treated as "someone else is sweeping".
+- **Bounded work.** The render-time sweep takes at most 10 payments and 8
+  seconds; the cron takes 200 and 50 seconds.
+- **A sweep can never break a page.** Everything inside `after()` is wrapped;
+  a failure just means the next render retries.
+- `/status?reference=…` settles that one reference *before* rendering, so a
+  delegate returning from checkout sees the result immediately rather than
+  being told to wait.

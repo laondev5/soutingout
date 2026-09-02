@@ -1,9 +1,13 @@
 import { requireRole, can } from "@/lib/permissions"
 import { DashboardShell, type NavItem } from "@/components/dashboard/DashboardShell"
 import { LiveUpdates } from "@/components/dashboard/LiveUpdates"
+import { sweepPaymentsInBackground } from "@/lib/reconcile-trigger"
 
 export default async function DashboardLayout({ children }: LayoutProps<"/dashboard">) {
   const user = await requireRole("super_admin", "sub_admin")
+
+  // Settle pending Paystack payments after this response is sent.
+  sweepPaymentsInBackground()
 
   // Menu mirrors what the proxy allows, so nobody is shown a link that
   // redirects them straight back.

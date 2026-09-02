@@ -3,6 +3,8 @@ import Link from "next/link"
 import { StatusClient } from "@/components/StatusClient"
 import { isPaystackConfigured } from "@/lib/paystack"
 import { isCloudinaryConfigured } from "@/lib/cloudinary"
+import { reconcileOne } from "@/lib/reconcile"
+import { sweepPaymentsInBackground } from "@/lib/reconcile-trigger"
 import { LogoLockup } from "@/components/Logo"
 import { WhatsAppButton } from "@/components/WhatsAppButton"
 import { EVENT } from "@/lib/constants"
@@ -14,6 +16,15 @@ export const metadata: Metadata = {
 export default async function StatusPage({ searchParams }: PageProps<"/status">) {
   const params = await searchParams
   const reference = typeof params.reference === "string" ? params.reference : undefined
+
+  // Paystack sends the delegate back here with their reference. Settle that
+  // one before rendering, so the page they land on already shows the result
+  // rather than telling them to wait for a webhook.
+  if (reference) {
+    await reconcileOne(reference)
+  }
+
+  sweepPaymentsInBackground()
 
   return (
     <main className="flex-1">
