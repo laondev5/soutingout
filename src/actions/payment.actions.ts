@@ -9,12 +9,9 @@ import {
   isPaystackConfigured,
 } from "@/lib/paystack"
 import { logActivity } from "@/lib/activity-log"
+import { appUrl } from "@/lib/app-url"
 
 type ActionResult<T = object> = ({ ok: true } & T) | { ok: false; error: string }
-
-function appUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
-}
 
 /**
  * Start a Paystack checkout for whatever the delegate still owes.

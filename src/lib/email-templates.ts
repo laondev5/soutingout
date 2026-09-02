@@ -1,8 +1,8 @@
 import { EVENT, formatNaira } from "@/lib/constants"
+import { appUrl as siteUrl } from "@/lib/app-url"
 
 function appUrl(path = "") {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
-  return `${base.replace(/\/$/, "")}${path}`
+  return `${siteUrl()}${path}`
 }
 
 function escapeHtml(value: string) {
