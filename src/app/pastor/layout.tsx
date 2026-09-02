@@ -1,9 +1,13 @@
 import { requireRole } from "@/lib/permissions"
 import { DashboardShell, type NavItem } from "@/components/dashboard/DashboardShell"
 import { LiveUpdates } from "@/components/dashboard/LiveUpdates"
+import { sweepPaymentsInBackground } from "@/lib/reconcile-trigger"
 
 export default async function PastorLayout({ children }: LayoutProps<"/pastor">) {
   const user = await requireRole("pastor")
+
+  // Settle pending Paystack payments after this response is sent.
+  sweepPaymentsInBackground()
 
   const nav: NavItem[] = [
     { href: "/pastor", label: "My delegates", icon: "delegates" },
