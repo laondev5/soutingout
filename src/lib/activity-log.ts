@@ -4,7 +4,15 @@ import { connectDB } from "@/lib/mongoose"
 export type ActivityInput = {
   actorUserId?: string | null
   action: string
-  entityType: "user" | "delegate" | "payment" | "accommodation" | "import" | "assignment"
+  entityType:
+    | "user"
+    | "delegate"
+    | "payment"
+    | "accommodation"
+    | "import"
+    | "assignment"
+    | "site_content"
+    | "form_field"
   entityId?: string | null
   details?: Record<string, unknown>
 }

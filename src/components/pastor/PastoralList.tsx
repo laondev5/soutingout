@@ -8,6 +8,15 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import type { ViewMode } from "@/lib/list-params"
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -18,7 +27,13 @@ import {
 import { setPastoralStatus } from "@/actions/delegate.actions"
 import type { PastoralDelegate } from "@/lib/pastoral"
 
-export function PastoralList({ delegates }: { delegates: PastoralDelegate[] }) {
+export function PastoralList({
+  delegates,
+  view = "cards",
+}: {
+  delegates: PastoralDelegate[]
+  view?: ViewMode
+}) {
   const router = useRouter()
   const [active, setActive] = useState<PastoralDelegate | null>(null)
   const [notes, setNotes] = useState("")
@@ -70,6 +85,83 @@ export function PastoralList({ delegates }: { delegates: PastoralDelegate[] }) {
       <p className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
         No delegates here yet.
       </p>
+    )
+  }
+
+  if (view === "table") {
+    return (
+      <>
+        <div className="overflow-x-auto rounded-xl border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Delegate</TableHead>
+                <TableHead className="hidden sm:table-cell">Contact</TableHead>
+                <TableHead className="hidden lg:table-cell">Coming with</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {delegates.map((delegate) => (
+                <TableRow key={delegate.id}>
+                  <TableCell>
+                    <span className="font-medium">{delegate.fullName}</span>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {delegate.lffId ?? "Awaiting payment"}
+                    </p>
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell text-sm">
+                    <a href={`tel:${delegate.whatsappNumber || delegate.phoneNumber}`}>
+                      {delegate.whatsappNumber || delegate.phoneNumber || "—"}
+                    </a>
+                    <p className="truncate text-xs text-muted-foreground">{delegate.email}</p>
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+                    {delegate.comingWith || "—"}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={delegate.status === "seen" ? "default" : "outline"}>
+                      {delegate.status === "seen" ? "Seen" : "Pending"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      {delegate.status === "pending" ? (
+                        <Button
+                          size="icon-sm"
+                          disabled={pending}
+                          onClick={() => quickSeen(delegate)}
+                          title="Mark as seen"
+                          aria-label={`Mark ${delegate.fullName} as seen`}
+                        >
+                          <Check className="size-3.5" />
+                        </Button>
+                      ) : null}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => open(delegate)}
+                      >
+                        Notes
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+
+        <NotesDialog
+          active={active}
+          notes={notes}
+          setNotes={setNotes}
+          pending={pending}
+          onClose={() => setActive(null)}
+          onSave={save}
+        />
+      </>
     )
   }
 
@@ -127,35 +219,63 @@ export function PastoralList({ delegates }: { delegates: PastoralDelegate[] }) {
         ))}
       </ul>
 
-      <Dialog open={active !== null} onOpenChange={(isOpen) => !isOpen && setActive(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{active?.fullName}</DialogTitle>
-            <DialogDescription>
-              Notes are private to you and are not shown to the delegate.
-            </DialogDescription>
-          </DialogHeader>
-
-          <Textarea
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            rows={6}
-            placeholder="What you discussed, what to follow up on…"
-          />
-
-          <DialogFooter className="gap-2">
-            {active?.status === "seen" ? (
-              <Button variant="outline" onClick={() => save("pending")} disabled={pending}>
-                <Undo2 className="size-4" /> Back to pending
-              </Button>
-            ) : null}
-            <Button onClick={() => save("seen")} disabled={pending}>
-              {pending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-              Save as seen
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NotesDialog
+        active={active}
+        notes={notes}
+        setNotes={setNotes}
+        pending={pending}
+        onClose={() => setActive(null)}
+        onSave={save}
+      />
     </>
+  )
+}
+
+/** One dialog, shared by the card and table views. */
+function NotesDialog({
+  active,
+  notes,
+  setNotes,
+  pending,
+  onClose,
+  onSave,
+}: {
+  active: PastoralDelegate | null
+  notes: string
+  setNotes: (value: string) => void
+  pending: boolean
+  onClose: () => void
+  onSave: (status: "seen" | "pending") => void
+}) {
+  return (
+    <Dialog open={active !== null} onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{active?.fullName}</DialogTitle>
+          <DialogDescription>
+            Notes are private to you and are not shown to the delegate.
+          </DialogDescription>
+        </DialogHeader>
+
+        <Textarea
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
+          rows={6}
+          placeholder="What you discussed, what to follow up on…"
+        />
+
+        <DialogFooter className="gap-2">
+          {active?.status === "seen" ? (
+            <Button variant="outline" onClick={() => onSave("pending")} disabled={pending}>
+              <Undo2 className="size-4" /> Back to pending
+            </Button>
+          ) : null}
+          <Button onClick={() => onSave("seen")} disabled={pending}>
+            {pending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+            Save as seen
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

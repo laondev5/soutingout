@@ -10,6 +10,7 @@ import { connectDB } from "@/lib/mongoose"
 import { trySendEmail } from "@/lib/email"
 import { delegateAssignedEmail, delegateUnassignedEmail } from "@/lib/email-templates"
 import { logActivity } from "@/lib/activity-log"
+import { publishDashboardEvent } from "@/lib/pusher"
 
 export type AssignableRole = "sub_admin" | "pastor"
 
@@ -134,6 +135,13 @@ export async function assignDelegate(input: {
       to: String(toUserId),
       reason: input.reason ?? "",
     },
+  })
+
+  await publishDashboardEvent({
+    type: "delegate.assigned",
+    delegateId: String(delegate._id),
+    toUserId: String(toUserId),
+    fullName: delegate.fullName,
   })
 
   if (notify && input.role === "sub_admin") {

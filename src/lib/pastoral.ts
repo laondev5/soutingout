@@ -20,7 +20,7 @@ export type PastoralDelegate = {
   seenAt: string | null
 }
 
-const PAGE_SIZE = 24
+const DEFAULT_PAGE_SIZE = 25
 
 /**
  * A pastor's caseload. Pastoral status lives in its own collection rather than
@@ -29,11 +29,17 @@ const PAGE_SIZE = 24
  */
 export async function listPastoralDelegates(
   user: SessionUser,
-  filters: { status?: PastoralStatus | "all"; search?: string; page?: number } = {}
+  filters: {
+    status?: PastoralStatus | "all"
+    search?: string
+    page?: number
+    pageSize?: number
+  } = {}
 ) {
   await connectDB()
 
   const page = Math.max(1, filters.page ?? 1)
+  const perPage = Math.min(100, Math.max(1, filters.pageSize ?? DEFAULT_PAGE_SIZE))
   const pastorId = new mongoose.Types.ObjectId(user.id)
 
   const query: Record<string, unknown> = {
@@ -69,8 +75,8 @@ export async function listPastoralDelegates(
     DelegateModel.find(query)
       .select("fullName email phoneNumber whatsappNumber comingWith lffId accommodationCode registrationStatus")
       .sort({ createdAt: -1 })
-      .skip((page - 1) * PAGE_SIZE)
-      .limit(PAGE_SIZE)
+      .skip((page - 1) * perPage)
+      .limit(perPage)
       .lean(),
     DelegateModel.countDocuments(query),
   ])
@@ -101,7 +107,7 @@ export async function listPastoralDelegates(
     }
   })
 
-  return { items, total, page, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)), pageSize: PAGE_SIZE }
+  return { items, total, page, pages: Math.max(1, Math.ceil(total / perPage)), pageSize: perPage }
 }
 
 async function seenIds(pastorId: mongoose.Types.ObjectId) {

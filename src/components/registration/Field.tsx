@@ -10,7 +10,7 @@ export function Field({
   className,
   children,
 }: {
-  label: string
+  label?: string
   htmlFor?: string
   error?: string
   required?: boolean
@@ -22,16 +22,19 @@ export function Field({
 
   return (
     <div className={cn("space-y-2", className)}>
-      <Label htmlFor={htmlFor} className="text-sm font-medium">
-        {label}
-        {required ? (
-          <span className="text-destructive" aria-hidden>
-            *
-          </span>
-        ) : (
-          <span className="text-xs font-normal text-muted-foreground">(optional)</span>
-        )}
-      </Label>
+      {/* A single checkbox carries its own label, so the field can omit one. */}
+      {label ? (
+        <Label htmlFor={htmlFor} className="text-sm font-medium">
+          {label}
+          {required ? (
+            <span className="text-destructive" aria-hidden>
+              *
+            </span>
+          ) : (
+            <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+          )}
+        </Label>
+      ) : null}
 
       {hint ? <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p> : null}
 

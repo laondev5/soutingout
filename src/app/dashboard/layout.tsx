@@ -1,5 +1,6 @@
 import { requireRole, can } from "@/lib/permissions"
 import { DashboardShell, type NavItem } from "@/components/dashboard/DashboardShell"
+import { LiveUpdates } from "@/components/dashboard/LiveUpdates"
 
 export default async function DashboardLayout({ children }: LayoutProps<"/dashboard">) {
   const user = await requireRole("super_admin", "sub_admin")
@@ -22,6 +23,8 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
   if (user.role === "super_admin") {
     nav.push(
       { href: "/dashboard/accommodations", label: "Accommodation", icon: "accommodation" },
+      { href: "/dashboard/cms", label: "Page content", icon: "cms" },
+      { href: "/dashboard/form-builder", label: "Form builder", icon: "formBuilder" },
       { href: "/dashboard/admins", label: "Sub-admins", icon: "admins" },
       { href: "/dashboard/pastors", label: "Pastors", icon: "pastors" },
       { href: "/dashboard/analytics", label: "Analytics", icon: "analytics" },
@@ -31,6 +34,12 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
 
   return (
     <DashboardShell user={user} nav={nav}>
+      {/* Live dashboard updates. Renders nothing when Pusher is unconfigured. */}
+      <LiveUpdates
+        pusherKey={process.env.NEXT_PUBLIC_PUSHER_KEY ?? null}
+        cluster={process.env.NEXT_PUBLIC_PUSHER_CLUSTER ?? null}
+        userId={user.id}
+      />
       {children}
     </DashboardShell>
   )

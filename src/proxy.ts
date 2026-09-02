@@ -9,6 +9,8 @@ const ROLE_GATES: { prefix: string; roles: string[] }[] = [
   { prefix: "/dashboard/admins", roles: ["super_admin"] },
   { prefix: "/dashboard/pastors", roles: ["super_admin"] },
   { prefix: "/dashboard/accommodations", roles: ["super_admin"] },
+  { prefix: "/dashboard/cms", roles: ["super_admin"] },
+  { prefix: "/dashboard/form-builder", roles: ["super_admin"] },
   { prefix: "/dashboard/activity", roles: ["super_admin"] },
   { prefix: "/dashboard/analytics", roles: ["super_admin"] },
   { prefix: "/dashboard", roles: ["super_admin", "sub_admin"] },

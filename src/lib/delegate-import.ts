@@ -3,6 +3,13 @@ import * as XLSX from "xlsx"
 import { AccommodationModel } from "@/lib/db-models"
 import { connectDB } from "@/lib/mongoose"
 import {
+  IMPORT_FIELDS,
+  FIELD_LABELS,
+  type ImportField,
+  type SheetTable,
+  type RowIssue,
+} from "@/lib/import-fields"
+import {
   ADDITIONAL_SERVICES,
   COMING_WITH_OPTIONS,
   familyMemberCount,
@@ -11,50 +18,9 @@ import {
   type ComingWith,
 } from "@/lib/constants"
 
-/** The Delegate fields a Sheet column can be mapped onto. */
-export const IMPORT_FIELDS = [
-  "timestamp",
-  "fullName",
-  "whatsappNumber",
-  "phoneNumber",
-  "email",
-  "gender",
-  "comingWith",
-  "partnerFullName",
-  "partnerPhone",
-  "partnerWhatsapp",
-  "partnerGender",
-  "familyMember1",
-  "familyMember2",
-  "familyMember3",
-  "accommodation",
-  "comments",
-  "additionalServices",
-  "consent",
-] as const
-
-export type ImportField = (typeof IMPORT_FIELDS)[number]
-
-export const FIELD_LABELS: Record<ImportField, string> = {
-  timestamp: "Timestamp",
-  fullName: "Full names",
-  whatsappNumber: "WhatsApp number",
-  phoneNumber: "Phone number",
-  email: "Email",
-  gender: "Gender",
-  comingWith: "Who are you coming with",
-  partnerFullName: "Spouse / friend — full names",
-  partnerPhone: "Spouse / friend — phone",
-  partnerWhatsapp: "Spouse / friend — WhatsApp",
-  partnerGender: "Spouse / friend — gender",
-  familyMember1: "Family member 1",
-  familyMember2: "Family member 2",
-  familyMember3: "Family member 3",
-  accommodation: "Accommodation",
-  comments: "Comments",
-  additionalServices: "Additional services",
-  consent: "Paid retreat consent",
-}
+// Re-exported so server callers can pull the whole pipeline from one module.
+export { IMPORT_FIELDS, FIELD_LABELS }
+export type { ImportField, SheetTable, RowIssue }
 
 /**
  * Keyword sets used to guess which column is which. The Google Form's headers
@@ -118,8 +84,6 @@ export function guessMapping(headers: string[]): Record<string, ImportField | ""
 }
 
 // ── Reading a sheet ──────────────────────────────────────────────────
-
-export type SheetTable = { headers: string[]; rows: Record<string, string>[] }
 
 export function parseWorkbook(buffer: ArrayBuffer): SheetTable {
   const workbook = XLSX.read(buffer, { type: "array", cellDates: true })
@@ -211,7 +175,6 @@ export type NormalizedRow = {
   additionalServices: AdditionalServiceId[]
 }
 
-export type RowIssue = { rowNumber: number; reason: string; name: string }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 

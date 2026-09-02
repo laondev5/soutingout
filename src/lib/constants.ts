@@ -22,6 +22,18 @@ export const EVENT = {
   },
 } as const
 
+/**
+ * wa.me needs the number in international format with no plus or spaces.
+ * Derived from `supportPhone` so there is only one number to keep correct.
+ */
+export const WHATSAPP_NUMBER = EVENT.supportPhone.replace(/[^\d]/g, "")
+
+export const WHATSAPP_DEFAULT_MESSAGE = `Hello, I have a question about the ${EVENT.shortName} retreat.`
+
+export function whatsappLink(message: string = WHATSAPP_DEFAULT_MESSAGE) {
+  return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
+}
+
 export const CURRENCY = "NGN"
 
 /** Naira integers. Format for display only — never store formatted strings. */
