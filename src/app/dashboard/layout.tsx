@@ -2,6 +2,7 @@ import { requireRole, can } from "@/lib/permissions"
 import { DashboardShell, type NavItem } from "@/components/dashboard/DashboardShell"
 import { LiveUpdates } from "@/components/dashboard/LiveUpdates"
 import { sweepPaymentsInBackground } from "@/lib/reconcile-trigger"
+import { pusherClientConfig } from "@/lib/pusher"
 
 export default async function DashboardLayout({ children }: LayoutProps<"/dashboard">) {
   const user = await requireRole("super_admin", "sub_admin")
@@ -39,11 +40,7 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
   return (
     <DashboardShell user={user} nav={nav}>
       {/* Live dashboard updates. Renders nothing when Pusher is unconfigured. */}
-      <LiveUpdates
-        pusherKey={process.env.NEXT_PUBLIC_PUSHER_KEY ?? null}
-        cluster={process.env.NEXT_PUBLIC_PUSHER_CLUSTER ?? null}
-        userId={user.id}
-      />
+      <LiveUpdates {...pusherClientConfig()} userId={user.id} />
       {children}
     </DashboardShell>
   )

@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/permissions"
 import { DashboardShell, type NavItem } from "@/components/dashboard/DashboardShell"
 import { LiveUpdates } from "@/components/dashboard/LiveUpdates"
 import { sweepPaymentsInBackground } from "@/lib/reconcile-trigger"
+import { pusherClientConfig } from "@/lib/pusher"
 
 export default async function PastorLayout({ children }: LayoutProps<"/pastor">) {
   const user = await requireRole("pastor")
@@ -17,11 +18,7 @@ export default async function PastorLayout({ children }: LayoutProps<"/pastor">)
   return (
     <DashboardShell user={user} nav={nav}>
       {/* Live dashboard updates. Renders nothing when Pusher is unconfigured. */}
-      <LiveUpdates
-        pusherKey={process.env.NEXT_PUBLIC_PUSHER_KEY ?? null}
-        cluster={process.env.NEXT_PUBLIC_PUSHER_CLUSTER ?? null}
-        userId={user.id}
-      />
+      <LiveUpdates {...pusherClientConfig()} userId={user.id} />
       {children}
     </DashboardShell>
   )

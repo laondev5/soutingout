@@ -26,6 +26,23 @@ function getClient() {
   return client
 }
 
+/**
+ * The key and cluster the browser needs to subscribe.
+ *
+ * Read on the server and handed to `LiveUpdates` as props, so these do not
+ * need a `NEXT_PUBLIC_` prefix — that is only required when the code reading
+ * `process.env` is itself in the client bundle. The prefixed names are still
+ * accepted so an existing deployment keeps working.
+ */
+export function pusherClientConfig() {
+  return {
+    // Not named `key`: React reserves that prop, so it would be swallowed as
+    // the element key and never reach the component.
+    pusherKey: process.env.PUSHER_KEY ?? process.env.NEXT_PUBLIC_PUSHER_KEY ?? null,
+    cluster: process.env.PUSHER_CLUSTER ?? process.env.NEXT_PUBLIC_PUSHER_CLUSTER ?? null,
+  }
+}
+
 export const CHANNELS = {
   dashboard: "dashboard",
 } as const
