@@ -29,7 +29,7 @@ import {
   IMPORT_FIELDS,
   type ImportField,
   type SheetTable,
-} from "@/lib/delegate-import"
+} from "@/lib/import-fields"
 import { formatNaira } from "@/lib/constants"
 
 const PAGE_SIZE = 25

@@ -31,9 +31,15 @@ export const CHANNELS = {
 } as const
 
 export type DashboardEvent =
-  | { type: "delegate.registered"; delegateId: string; fullName: string }
-  | { type: "payment.confirmed"; delegateId: string; fullName: string; lffId: string | null }
-  | { type: "delegate.assigned"; delegateId: string; toUserId: string }
+  | { type: "delegate.registered"; delegateId: string; fullName: string; totalDue?: number }
+  | {
+      type: "payment.confirmed"
+      delegateId: string
+      fullName: string
+      lffId: string | null
+      amount?: number
+    }
+  | { type: "delegate.assigned"; delegateId: string; toUserId: string; fullName?: string }
 
 /**
  * Fire-and-forget. Realtime is a convenience on top of the data that is

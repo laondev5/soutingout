@@ -9,7 +9,9 @@ import { autoAssignNewDelegate } from "@/lib/assignment"
 import { trySendEmail } from "@/lib/email"
 import { registrationReceivedEmail } from "@/lib/email-templates"
 import { logActivity } from "@/lib/activity-log"
+import { publishDashboardEvent } from "@/lib/pusher"
 import { companionStepFor, familyMemberCount, type AdditionalServiceId } from "@/lib/constants"
+import { customFieldsSchema, getActiveFormFields } from "@/lib/form-config"
 
 export type RegistrationResult =
   | {
@@ -18,9 +20,16 @@ export type RegistrationResult =
       totalDue: number
       accommodationName: string
     }
-  | { ok: false; error: string; fieldErrors?: Record<string, string[]> }
+  | {
+      ok: false
+      error: string
+      fieldErrors?: Record<string, string[]>
+      customFieldErrors?: Record<string, string>
+    }
 
-export async function submitRegistration(input: RegistrationInput): Promise<RegistrationResult> {
+export async function submitRegistration(
+  input: RegistrationInput & { customFields?: Record<string, unknown> }
+): Promise<RegistrationResult> {
   const parsed = registrationSchema.safeParse(input)
 
   if (!parsed.success) {
@@ -35,6 +44,25 @@ export async function submitRegistration(input: RegistrationInput): Promise<Regi
   const values = parsed.data
 
   await connectDB()
+
+  // Custom questions are validated against the live field definitions, so a
+  // crafted payload cannot smuggle in keys nobody asked for.
+  const activeFields = await getActiveFormFields()
+  const customParsed = customFieldsSchema(activeFields).safeParse(input.customFields ?? {})
+
+  if (!customParsed.success) {
+    const customFieldErrors: Record<string, string> = {}
+    for (const issue of customParsed.error.issues) {
+      const key = String(issue.path[0] ?? "")
+      if (key && !customFieldErrors[key]) customFieldErrors[key] = issue.message
+    }
+
+    return {
+      ok: false,
+      error: "Please check the highlighted fields.",
+      customFieldErrors,
+    }
+  }
 
   const accommodation = await AccommodationModel.findById(values.accommodationId)
   if (!accommodation || !accommodation.isActive) {
@@ -91,6 +119,7 @@ export async function submitRegistration(input: RegistrationInput): Promise<Regi
     totalDue: priced.total,
     totalPaid: 0,
     source: "registration_form",
+    customFields: customParsed.data,
   })
 
   await BookingModel.create({
@@ -120,6 +149,13 @@ export async function submitRegistration(input: RegistrationInput): Promise<Regi
       totalDue: priced.total,
       partySize: priced.partySize,
     },
+  })
+
+  await publishDashboardEvent({
+    type: "delegate.registered",
+    delegateId: String(delegate._id),
+    fullName: values.fullName,
+    totalDue: priced.total,
   })
 
   await trySendEmail({

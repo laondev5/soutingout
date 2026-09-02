@@ -33,11 +33,11 @@ export type PaymentListItem = {
  */
 export async function listPayments(
   user: SessionUser,
-  filters: { status?: PaymentStatus | "all"; page?: number } = {}
+  filters: { status?: PaymentStatus | "all"; page?: number; pageSize?: number } = {}
 ) {
   await connectDB()
 
-  const perPage = 25
+  const perPage = Math.min(100, Math.max(1, filters.pageSize ?? 25))
   const page = Math.max(1, filters.page ?? 1)
 
   const scope = delegateScope(user)

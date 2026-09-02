@@ -184,6 +184,9 @@ export interface IDelegate extends Timestamps {
   source: "registration_form" | "google_sheet_import" | "manual"
   importBatchId: Types.ObjectId | null
   confirmedAt: Date | null
+
+  /** Answers to super-admin-defined fields. Never affects pricing. */
+  customFields: Record<string, unknown>
 }
 
 const companionSchema = new Schema<ICompanion>(
@@ -240,6 +243,7 @@ const delegateSchema = new Schema<IDelegate>(
       default: "registration_form",
     },
     importBatchId: { type: Schema.Types.ObjectId, ref: "ImportBatch", default: null },
+    customFields: { type: Schema.Types.Mixed, default: {} },
     confirmedAt: { type: Date, default: null },
   },
   { timestamps: true }
@@ -259,8 +263,18 @@ delegateSchema.index(
 )
 delegateSchema.index({ email: 1 })
 delegateSchema.index({ phoneNumber: 1 })
+// The Sheet import dedupes on email first and WhatsApp second, and does it
+// once per row, so both need to be indexed.
+delegateSchema.index({ whatsappNumber: 1 })
+// Every list is "my delegates, newest first" — the sort key belongs in the
+// same index as the scope key, otherwise Mongo sorts the whole scope in memory.
 delegateSchema.index({ assignedSubAdminId: 1, registrationStatus: 1 })
-delegateSchema.index({ assignedPastorId: 1 })
+delegateSchema.index({ assignedSubAdminId: 1, createdAt: -1 })
+delegateSchema.index({ assignedPastorId: 1, createdAt: -1 })
+delegateSchema.index({ registrationStatus: 1, createdAt: -1 })
+delegateSchema.index({ createdAt: -1 })
+// Rollback finds a whole batch by this.
+delegateSchema.index({ importBatchId: 1 })
 
 export const DelegateModel = model<IDelegate>("Delegate", delegateSchema)
 
@@ -340,6 +354,8 @@ const paymentSchema = new Schema<IPayment>(
 paymentSchema.index({ delegateId: 1, status: 1 })
 // Drives the cron's atomic claim query.
 paymentSchema.index({ status: 1, provider: 1, nextRetryAt: 1 })
+// The payments queue lists newest-first within a status.
+paymentSchema.index({ status: 1, createdAt: -1 })
 
 export const PaymentModel = model<IPayment>("Payment", paymentSchema)
 
@@ -435,6 +451,9 @@ const importBatchSchema = new Schema<IImportBatch>(
   { timestamps: true }
 )
 
+importBatchSchema.index({ actorUserId: 1, createdAt: -1 })
+importBatchSchema.index({ createdAt: -1 })
+
 export const ImportBatchModel = model<IImportBatch>("ImportBatch", importBatchSchema)
 
 // ── ActivityLog ──────────────────────────────────────────────────────
@@ -463,6 +482,92 @@ activityLogSchema.index({ createdAt: -1 })
 activityLogSchema.index({ entityType: 1, entityId: 1 })
 
 export const ActivityLogModel = model<IActivityLog>("ActivityLog", activityLogSchema)
+
+// ── SiteContent ──────────────────────────────────────────────────────
+// One document per editable page section. `blocks` is the ordered widget list
+// the CMS editor writes and the public pages render.
+
+export interface ISiteBlock {
+  id: string
+  type: string
+  props: Record<string, unknown>
+  visible: boolean
+}
+
+export interface ISiteContent extends Timestamps {
+  _id: Types.ObjectId
+  slug: string
+  blocks: ISiteBlock[]
+  /** Draft edits are kept apart until the super admin publishes. */
+  draftBlocks: ISiteBlock[] | null
+  publishedAt: Date | null
+  updatedByUserId: Types.ObjectId | null
+}
+
+const siteBlockSchema = new Schema<ISiteBlock>(
+  {
+    id: { type: String, required: true },
+    type: { type: String, required: true },
+    props: { type: Schema.Types.Mixed, default: {} },
+    visible: { type: Boolean, default: true },
+  },
+  { _id: false }
+)
+
+const siteContentSchema = new Schema<ISiteContent>(
+  {
+    slug: { type: String, required: true, unique: true, trim: true },
+    blocks: { type: [siteBlockSchema], default: [] },
+    draftBlocks: { type: [siteBlockSchema], default: null },
+    publishedAt: { type: Date, default: null },
+    updatedByUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+  },
+  { timestamps: true }
+)
+
+export const SiteContentModel = model<ISiteContent>("SiteContent", siteContentSchema)
+
+// ── FormField ────────────────────────────────────────────────────────
+// The editable registration form. Built-in fields mirror real Delegate
+// columns; custom ones land in `Delegate.customFields`.
+
+export interface IFormField extends Timestamps {
+  _id: Types.ObjectId
+  key: string
+  label: string
+  type: string
+  step: string
+  required: boolean
+  placeholder: string
+  helpText: string
+  options: string[]
+  order: number
+  isActive: boolean
+  isBuiltIn: boolean
+  isLocked: boolean
+}
+
+const formFieldSchema = new Schema<IFormField>(
+  {
+    key: { type: String, required: true, unique: true, trim: true },
+    label: { type: String, required: true, trim: true },
+    type: { type: String, required: true },
+    step: { type: String, required: true },
+    required: { type: Boolean, default: false },
+    placeholder: { type: String, default: "" },
+    helpText: { type: String, default: "" },
+    options: { type: [String], default: [] },
+    order: { type: Number, default: 0 },
+    isActive: { type: Boolean, default: true },
+    isBuiltIn: { type: Boolean, default: false },
+    isLocked: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+)
+
+formFieldSchema.index({ step: 1, order: 1 })
+
+export const FormFieldModel = model<IFormField>("FormField", formFieldSchema)
 
 // ── Counter ──────────────────────────────────────────────────────────
 // Atomic sequence source for LFF IDs and accommodation codes.

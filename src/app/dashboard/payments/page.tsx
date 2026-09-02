@@ -4,7 +4,6 @@ import { ExternalLink } from "lucide-react"
 import { requireUser, can } from "@/lib/permissions"
 import { listPayments, outstandingBalance, paymentCounts } from "@/lib/payment-list"
 import { formatNaira, PAYMENT_STATUSES, type PaymentStatus } from "@/lib/constants"
-import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import {
   Table,
@@ -15,14 +14,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ConfirmPaymentButton } from "@/components/dashboard/PaymentRowActions"
+import { PaymentStatusBadge } from "@/components/dashboard/StatusBadge"
+import { Pagination } from "@/components/dashboard/Pagination"
+import { readPageSize } from "@/lib/list-params"
 import { cn } from "@/lib/utils"
-
-const STATUS_TONE: Record<PaymentStatus, "default" | "secondary" | "destructive" | "outline"> = {
-  pending: "outline",
-  submitted: "secondary",
-  confirmed: "default",
-  failed: "destructive",
-}
 
 const TABS: { value: PaymentStatus | "all"; label: string }[] = [
   { value: "submitted", label: "Awaiting review" },
@@ -47,9 +42,10 @@ export default async function PaymentsPage({ searchParams }: PageProps<"/dashboa
       ? "all"
       : "submitted") as PaymentStatus | "all"
   const page = Number(typeof params.page === "string" ? params.page : "1") || 1
+  const pageSize = readPageSize(params.perPage)
 
   const [result, counts, balance] = await Promise.all([
-    listPayments(user, { status, page }),
+    listPayments(user, { status, page, pageSize }),
     paymentCounts(user),
     outstandingBalance(user),
   ])
@@ -67,11 +63,19 @@ export default async function PaymentsPage({ searchParams }: PageProps<"/dashboa
 
       <dl className="grid gap-3 sm:grid-cols-3">
         {[
-          { label: "Expected", value: formatNaira(balance.due) },
-          { label: "Received", value: formatNaira(balance.paid) },
-          { label: "Outstanding", value: formatNaira(balance.outstanding) },
+          { label: "Expected", value: formatNaira(balance.due), tone: "" },
+          {
+            label: "Received",
+            value: formatNaira(balance.paid),
+            tone: "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/40",
+          },
+          {
+            label: "Outstanding",
+            value: formatNaira(balance.outstanding),
+            tone: "border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/40",
+          },
         ].map((stat) => (
-          <div key={stat.label} className="rounded-xl border p-4">
+          <div key={stat.label} className={cn("rounded-xl border p-4", stat.tone)}>
             <dt className="text-xs uppercase tracking-wide text-muted-foreground">{stat.label}</dt>
             <dd className="mt-1 text-xl font-semibold tabular-nums">{stat.value}</dd>
           </div>
@@ -103,10 +107,10 @@ export default async function PaymentsPage({ searchParams }: PageProps<"/dashboa
             <TableHeader>
               <TableRow>
                 <TableHead>Delegate</TableHead>
-                <TableHead>Reference</TableHead>
+                <TableHead className="hidden md:table-cell">Reference</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Receipt</TableHead>
+                <TableHead className="hidden sm:table-cell">Status</TableHead>
+                <TableHead className="hidden lg:table-cell">Receipt</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -127,8 +131,11 @@ export default async function PaymentsPage({ searchParams }: PageProps<"/dashboa
                     <p className="text-xs text-muted-foreground">
                       {payment.delegate?.lffId ?? payment.delegate?.email}
                     </p>
+                    <div className="mt-1 sm:hidden">
+                      <PaymentStatusBadge status={payment.status} />
+                    </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden md:table-cell">
                     <span className="font-mono text-xs">{payment.reference}</span>
                     <p className="text-xs capitalize text-muted-foreground">
                       {payment.provider}
@@ -137,13 +144,11 @@ export default async function PaymentsPage({ searchParams }: PageProps<"/dashboa
                         : ""}
                     </p>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
                     {formatNaira(payment.amount)}
                   </TableCell>
-                  <TableCell>
-                    <Badge variant={STATUS_TONE[payment.status]} className="capitalize">
-                      {payment.status}
-                    </Badge>
+                  <TableCell className="hidden sm:table-cell">
+                    <PaymentStatusBadge status={payment.status} />
                     {payment.lastError ? (
                       <p
                         className="mt-1 max-w-40 truncate text-xs text-destructive"
@@ -153,7 +158,7 @@ export default async function PaymentsPage({ searchParams }: PageProps<"/dashboa
                       </p>
                     ) : null}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden lg:table-cell">
                     {payment.receiptUrl ? (
                       <a
                         href={payment.receiptUrl}
@@ -179,31 +184,13 @@ export default async function PaymentsPage({ searchParams }: PageProps<"/dashboa
         </div>
       )}
 
-      {result.pages > 1 ? (
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">
-            Page {result.page} of {result.pages}
-          </span>
-          <div className="flex gap-2">
-            {result.page > 1 ? (
-              <Link
-                href={`/dashboard/payments?status=${status}&page=${result.page - 1}`}
-                className={buttonVariants({ variant: "outline", size: "sm" })}
-              >
-                Previous
-              </Link>
-            ) : null}
-            {result.page < result.pages ? (
-              <Link
-                href={`/dashboard/payments?status=${status}&page=${result.page + 1}`}
-                className={buttonVariants({ variant: "outline", size: "sm" })}
-              >
-                Next
-              </Link>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+      <Pagination
+        page={result.page}
+        pages={result.pages}
+        total={result.total}
+        pageSize={result.perPage}
+        label="payments"
+      />
     </div>
   )
 }

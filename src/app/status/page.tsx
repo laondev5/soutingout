@@ -4,6 +4,8 @@ import { StatusClient } from "@/components/StatusClient"
 import { isPaystackConfigured } from "@/lib/paystack"
 import { isCloudinaryConfigured } from "@/lib/cloudinary"
 import { LogoLockup } from "@/components/Logo"
+import { WhatsAppButton } from "@/components/WhatsAppButton"
+import { EVENT } from "@/lib/constants"
 
 export const metadata: Metadata = {
   title: "Check your status",
@@ -33,6 +35,10 @@ export default async function StatusPage({ searchParams }: PageProps<"/status">)
           initialReference={reference}
         />
       </div>
+
+      <WhatsAppButton
+        message={`Hello, I need help with my ${EVENT.shortName} registration or payment.`}
+      />
     </main>
   )
 }

@@ -1,9 +1,13 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { listAccommodationOptions } from "@/lib/accommodation"
+import { getSections } from "@/lib/cms"
+import { getCustomFieldsByStep } from "@/lib/form-config"
+import { isPaystackConfigured } from "@/lib/paystack"
 import { RegistrationStepper } from "@/components/registration/RegistrationStepper"
 import { EVENT } from "@/lib/constants"
 import { LogoLockup } from "@/components/Logo"
+import { WhatsAppButton } from "@/components/WhatsAppButton"
 
 export const metadata: Metadata = {
   title: "Register",
@@ -13,7 +17,17 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic"
 
 export default async function RegisterPage() {
-  const accommodations = await listAccommodationOptions()
+  const [accommodations, content, customFields] = await Promise.all([
+    listAccommodationOptions(),
+    getSections([
+      "register.welcome",
+      "register.fees",
+      "register.feeding",
+      "register.payment",
+      "register.submitted",
+    ]),
+    getCustomFieldsByStep(),
+  ])
 
   return (
     <main className="flex-1">
@@ -37,8 +51,15 @@ export default async function RegisterPage() {
           </p>
         </div>
       ) : (
-        <RegistrationStepper accommodations={accommodations} />
+        <RegistrationStepper
+          accommodations={accommodations}
+          content={content}
+          customFields={customFields}
+          paystackEnabled={isPaystackConfigured()}
+        />
       )}
+
+      <WhatsAppButton message={`Hello, I need help registering for the ${EVENT.shortName} retreat.`} />
     </main>
   )
 }

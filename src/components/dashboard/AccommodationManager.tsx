@@ -11,6 +11,16 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { ViewToggle } from "@/components/dashboard/ViewToggle"
+import type { ViewMode } from "@/lib/list-params"
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -98,9 +108,11 @@ const PRICING_LABELS: Record<PricingMode, string> = {
 export function AccommodationManager({
   accommodations,
   uploadsEnabled,
+  view,
 }: {
   accommodations: AccommodationRow[]
   uploadsEnabled: boolean
+  view: ViewMode
 }) {
   const router = useRouter()
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -172,9 +184,12 @@ export function AccommodationManager({
             Beds, price and photos for every tier on the registration form.
           </p>
         </div>
-        <Button onClick={() => setDraft({ ...BLANK })}>
-          <Plus className="size-4" /> Add accommodation
-        </Button>
+        <div className="flex items-center gap-2">
+          <ViewToggle view={view} />
+          <Button onClick={() => setDraft({ ...BLANK })}>
+            <Plus className="size-4" /> Add accommodation
+          </Button>
+        </div>
       </div>
 
       {!uploadsEnabled ? (
@@ -183,6 +198,80 @@ export function AccommodationManager({
         </p>
       ) : null}
 
+      {view === "table" ? (
+        <div className="overflow-x-auto rounded-xl border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead className="hidden sm:table-cell">Code</TableHead>
+                <TableHead className="text-right">Price</TableHead>
+                <TableHead className="hidden md:table-cell text-right">Beds</TableHead>
+                <TableHead className="hidden lg:table-cell">Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {accommodations.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell>
+                    <span className="font-medium">{row.name}</span>
+                    <p className="font-mono text-xs text-muted-foreground sm:hidden">
+                      {row.codePrefix}
+                    </p>
+                  </TableCell>
+                  <TableCell className="hidden font-mono text-xs sm:table-cell">
+                    {row.codePrefix}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {row.isFree ? "Free" : formatNaira(row.pricePerPerson)}
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      {row.pricingMode === "flat" ? "per unit" : "per person"}
+                    </span>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell text-right tabular-nums">
+                    {row.bedsTaken} / {row.totalBeds}
+                    <span className="block text-xs text-muted-foreground">
+                      {row.bedsAvailable} left
+                    </span>
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell">
+                    {!row.isActive ? (
+                      <Badge variant="outline">Hidden</Badge>
+                    ) : row.bedsAvailable === 0 ? (
+                      <Badge variant="destructive">Full</Badge>
+                    ) : (
+                      <Badge variant="secondary">Live</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        onClick={() => setDraft(toDraft(row))}
+                        aria-label={`Edit ${row.name}`}
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        disabled={pending}
+                        onClick={() => remove(row)}
+                        aria-label={`Delete ${row.name}`}
+                        className="text-destructive"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
       <ul className="grid gap-4 sm:grid-cols-2">
         {accommodations.map((row) => {
           const full = row.bedsAvailable === 0
@@ -268,6 +357,7 @@ export function AccommodationManager({
           )
         })}
       </ul>
+      )}
 
       {accommodations.length === 0 ? (
         <p className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">

@@ -28,9 +28,16 @@ export function ConfirmPaymentButton({ paymentId }: { paymentId: string }) {
   }
 
   return (
-    <Button size="sm" onClick={onConfirm} disabled={pending || done}>
+    <Button
+      size="sm"
+      onClick={onConfirm}
+      disabled={pending || done}
+      title="Confirm payment"
+      className="px-2 sm:px-3"
+    >
       {pending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-      Confirm
+      {/* On a phone the row is tight, so the tick carries the meaning alone. */}
+      <span className="sr-only sm:not-sr-only">Confirm</span>
     </Button>
   )
 }

@@ -10,6 +10,7 @@ import { trySendEmail } from "@/lib/email"
 import { paymentConfirmedEmail, paymentFailedEmail } from "@/lib/email-templates"
 import { identifiersFor, nextDelegateNumber } from "@/lib/lff-id"
 import { logActivity } from "@/lib/activity-log"
+import { publishDashboardEvent } from "@/lib/pusher"
 import { MAX_PAYMENT_ATTEMPTS, PAYMENT_RETRY_SCHEDULE_MINUTES } from "@/lib/constants"
 
 export type ConfirmResult =
@@ -105,6 +106,14 @@ export async function confirmPayment(input: {
       delegateId: String(delegate._id),
       lffId: fresh?.lffId ?? null,
     },
+  })
+
+  await publishDashboardEvent({
+    type: "payment.confirmed",
+    delegateId: String(delegate._id),
+    fullName: fresh?.fullName ?? "A delegate",
+    lffId: fresh?.lffId ?? null,
+    amount: payment.amount,
   })
 
   if (fresh?.email) {
@@ -236,10 +245,17 @@ export function scheduleRetry(attempts: number) {
   return new Date(Date.now() + nextRetryDelayMinutes(attempts) * 60_000)
 }
 
+/** How long a claimed payment is held before another run may retry it. */
+const CLAIM_LEASE_MS = 5 * 60_000
+
 /**
  * Atomically claim one due payment for reconciliation. Bumping `attempts` and
  * pushing `nextRetryAt` forward inside the same update means an overlapping
  * cron run cannot pick up the same row.
+ *
+ * `$inc` and `$set` rather than an aggregation pipeline: Mongoose 9 rejects a
+ * pipeline here unless `updatePipeline` is set, and nothing in this update
+ * needs to read another field to compute its value.
  */
 export async function claimPaymentForReconciliation() {
   await connectDB()
@@ -251,16 +267,10 @@ export async function claimPaymentForReconciliation() {
       attempts: { $lt: MAX_PAYMENT_ATTEMPTS },
       $or: [{ nextRetryAt: null }, { nextRetryAt: { $lte: new Date() } }],
     },
-    [
-      {
-        $set: {
-          attempts: { $add: ["$attempts", 1] },
-          nextRetryAt: {
-            $add: [new Date(), 1000 * 60 * 5],
-          },
-        },
-      },
-    ],
+    {
+      $inc: { attempts: 1 },
+      $set: { nextRetryAt: new Date(Date.now() + CLAIM_LEASE_MS) },
+    },
     { returnDocument: "after", sort: { nextRetryAt: 1, createdAt: 1 } }
   )
 }

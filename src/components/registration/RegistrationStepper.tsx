@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useForm, Controller, type Resolver } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { ArrowLeft, ArrowRight, Check, Loader2 } from "lucide-react"
+import { ArrowLeft, ArrowRight, Building2, Check, CreditCard, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -35,6 +35,11 @@ import {
   type RegistrationInput,
 } from "@/lib/registration-schema"
 import { submitRegistration } from "@/actions/registration.actions"
+import { initializePayment } from "@/actions/payment.actions"
+import { BlockRenderer, type PricingRow } from "@/components/cms/BlockRenderer"
+import { CustomFieldInputs, type CustomAnswers } from "@/components/registration/CustomFieldInputs"
+import type { Block } from "@/lib/cms-blocks"
+import type { FormFieldConfig } from "@/lib/form-fields"
 
 const DRAFT_KEY = `lff-registration-draft:${EVENT.tag}`
 
@@ -83,16 +88,37 @@ const EMPTY: RegistrationInput = {
   paidRetreatConsent: undefined as unknown as true,
 }
 
+export type PayMethod = "paystack" | "transfer"
+
 export function RegistrationStepper({
   accommodations,
+  content,
+  customFields,
+  paystackEnabled,
 }: {
   accommodations: AccommodationOption[]
+  /** Whether online checkout can be offered at all. */
+  paystackEnabled: boolean
+  /** CMS blocks per section slug — the editable copy on each step. */
+  content: Record<string, Block[]>
+  /** Super-admin-defined questions, grouped by the step they belong to. */
+  customFields: Record<string, FormFieldConfig[]>
 }) {
   const [stepIndex, setStepIndex] = useState(0)
   const [submitting, setSubmitting] = useState(false)
-  const [done, setDone] = useState<{ lffPending: true; accommodationName: string; totalDue: number } | null>(
-    null
-  )
+  // Custom fields are defined at runtime, so their answers live outside
+  // react-hook-form and are validated server-side against the same records.
+  const [custom, setCustom] = useState<CustomAnswers>({})
+  const [customErrors, setCustomErrors] = useState<Record<string, string>>({})
+  const [done, setDone] = useState<{
+    lffPending: true
+    accommodationName: string
+    totalDue: number
+    delegateId: string
+  } | null>(null)
+  // How the delegate said they will pay. Only decides what happens after the
+  // registration is saved — the registration itself is identical either way.
+  const [payMethod, setPayMethod] = useState<PayMethod>(paystackEnabled ? "paystack" : "transfer")
 
   const form = useForm<RegistrationInput>({
     resolver: zodResolver(registrationSchema) as unknown as Resolver<RegistrationInput>,
@@ -101,6 +127,26 @@ export function RegistrationStepper({
   })
 
   const values = form.watch()
+
+  const pricingRows: PricingRow[] = accommodations.map((option) => ({
+    id: option.id,
+    name: option.name,
+    description: option.description,
+    pricePerPerson: option.pricePerPerson,
+    pricingMode: option.pricingMode,
+    isFree: option.isFree,
+    bedsAvailable: option.bedsAvailable,
+  }))
+
+  function setCustomValue(key: string, value: unknown) {
+    setCustom((prev) => ({ ...prev, [key]: value }))
+    setCustomErrors((prev) => {
+      if (!prev[key]) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }
 
   // Restore a draft so a long form survives an accidental refresh.
   useEffect(() => {
@@ -172,7 +218,7 @@ export function RegistrationStepper({
   const onSubmit = form.handleSubmit(async (data) => {
     setSubmitting(true)
     try {
-      const result = await submitRegistration(data)
+      const result = await submitRegistration({ ...data, customFields: custom })
 
       if (!result.ok) {
         if (result.fieldErrors) {
@@ -182,16 +228,38 @@ export function RegistrationStepper({
             }
           }
         }
+        // Custom-field errors cannot go through setError — those names are not
+        // part of the typed schema — so they are tracked separately.
+        setCustomErrors(result.customFieldErrors ?? {})
         toast.error(result.error)
         return
       }
 
       window.localStorage.removeItem(DRAFT_KEY)
+
+      // The registration is saved at this point. Whatever happens with the
+      // payment provider next must not throw that away, so the confirmation
+      // state is set first and the handoff is attempted after it.
       setDone({
         lffPending: true,
         accommodationName: result.accommodationName,
         totalDue: result.totalDue,
+        delegateId: result.delegateId,
       })
+
+      if (payMethod === "paystack" && paystackEnabled && result.totalDue > 0) {
+        const checkout = await initializePayment({ delegateId: result.delegateId })
+
+        if (checkout.ok) {
+          window.location.href = checkout.authorizationUrl
+          return
+        }
+
+        // Paystack unreachable, or nothing owed. Fall through to the
+        // confirmation screen, which offers both paying online and a transfer.
+        toast.error(`${checkout.error} Your registration is saved.`)
+      }
+
       window.scrollTo({ top: 0, behavior: "smooth" })
     } catch (error) {
       console.error(error)
@@ -202,7 +270,9 @@ export function RegistrationStepper({
   })
 
   if (done) {
-    return <SubmittedPanel {...done} email={values.email} />
+    return (
+      <SubmittedPanel {...done} email={values.email} paystackEnabled={paystackEnabled} />
+    )
   }
 
   const progress = ((safeIndex + 1) / steps.length) * 100
@@ -224,8 +294,12 @@ export function RegistrationStepper({
 
       <form onSubmit={onSubmit} noValidate>
         <div className="space-y-6">
-          {step === "welcome" ? <WelcomeStep /> : null}
-          {step === "fees" ? <FeesStep accommodations={accommodations} /> : null}
+          {step === "welcome" ? (
+            <BlockRenderer blocks={content["register.welcome"] ?? []} context={{ pricing: pricingRows }} />
+          ) : null}
+          {step === "fees" ? (
+            <BlockRenderer blocks={content["register.fees"] ?? []} context={{ pricing: pricingRows }} />
+          ) : null}
           {step === "personal" ? <PersonalStep form={form} /> : null}
           {step === "comingWith" ? <ComingWithStep form={form} /> : null}
           {step === "partner" ? <PartnerStep form={form} /> : null}
@@ -233,9 +307,32 @@ export function RegistrationStepper({
           {step === "accommodation" ? (
             <AccommodationStep form={form} accommodations={accommodations} />
           ) : null}
-          {step === "feeding" ? <FeedingStep form={form} /> : null}
+          {step === "feeding" ? (
+            <FeedingStep form={form} content={content["register.feeding"] ?? []} />
+          ) : null}
           {step === "services" ? <ServicesStep form={form} /> : null}
-          {step === "payment" ? <PaymentStep form={form} priced={priced} /> : null}
+          {step === "payment" ? (
+            <PaymentStep
+              form={form}
+              priced={priced}
+              payMethod={payMethod}
+              onPayMethodChange={setPayMethod}
+              paystackEnabled={paystackEnabled}
+            />
+          ) : null}
+
+          {/* Whatever the super admin added to this step, appended after the
+              built-in questions. */}
+          {(customFields[step] ?? []).length > 0 ? (
+            <div className="space-y-5 border-t pt-5">
+              <CustomFieldInputs
+                fields={customFields[step] ?? []}
+                values={custom}
+                errors={customErrors}
+                onChange={setCustomValue}
+              />
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-10 flex items-center justify-between gap-3 border-t pt-6">
@@ -252,7 +349,12 @@ export function RegistrationStepper({
             <Button type="submit" size="lg" disabled={submitting}>
               {submitting ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" /> Submitting…
+                  <Loader2 className="size-4 animate-spin" />
+                  {payMethod === "paystack" ? "Opening checkout…" : "Submitting…"}
+                </>
+              ) : payMethod === "paystack" && paystackEnabled && priced.total > 0 ? (
+                <>
+                  Pay {formatNaira(priced.total)} <CreditCard className="size-4" />
                 </>
               ) : (
                 <>
@@ -617,17 +719,10 @@ function AccommodationStep({
   )
 }
 
-function FeedingStep({ form }: StepForm) {
+function FeedingStep({ form, content }: StepForm & { content: Block[] }) {
   return (
     <>
-      <Prose>
-        <p>Feeding is included in the accommodation cost.</p>
-        <p>Feeding is once daily, as delegates are expected to be on a fast.</p>
-        <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900">
-          If you have a medical condition that will not allow you to fast, please say so below
-          and bring along your own snacks and refreshments.
-        </p>
-      </Prose>
+      <BlockRenderer blocks={content} />
 
       <Field label="Comments if any" htmlFor="comments" error={form.formState.errors.comments?.message}>
         <Textarea id="comments" rows={4} {...form.register("comments")} />
@@ -691,7 +786,15 @@ function ServicesStep({ form }: StepForm) {
 function PaymentStep({
   form,
   priced,
-}: StepForm & { priced: ReturnType<typeof quote> }) {
+  payMethod,
+  onPayMethodChange,
+  paystackEnabled,
+}: StepForm & {
+  priced: ReturnType<typeof quote>
+  payMethod: PayMethod
+  onPayMethodChange: (method: PayMethod) => void
+  paystackEnabled: boolean
+}) {
   const { control, formState } = form
 
   return (
@@ -717,21 +820,45 @@ function PaymentStep({
         </div>
       </div>
 
-      <div className="rounded-lg border bg-muted/40 p-4">
-        <p className="text-sm font-semibold">Transfer to</p>
-        <dl className="mt-3 space-y-1.5 text-sm">
-          <Row label="Account name">{EVENT.bank.accountName}</Row>
-          <Row label="Account number">
-            <span className="font-mono font-semibold">{EVENT.bank.accountNumber}</span>
-          </Row>
-          <Row label="Bank">{EVENT.bank.bankName}</Row>
-        </dl>
-        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-          Screenshot or save this page if you are not paying immediately. After submitting you
-          can upload your proof of payment, or pay online by card. Accommodation is reserved only
-          once payment is confirmed.
-        </p>
-      </div>
+      {paystackEnabled && priced.total > 0 ? (
+        <fieldset className="space-y-2">
+          <legend className="mb-2 text-sm font-medium">How would you like to pay?</legend>
+
+          <PayOption
+            checked={payMethod === "paystack"}
+            onSelect={() => onPayMethodChange("paystack")}
+            icon={<CreditCard className="size-4" />}
+            title="Pay now online"
+            description="Card, bank transfer or USSD through Paystack. Your place is reserved as soon as the payment goes through."
+          />
+
+          <PayOption
+            checked={payMethod === "transfer"}
+            onSelect={() => onPayMethodChange("transfer")}
+            icon={<Building2 className="size-4" />}
+            title="Pay by bank transfer"
+            description="Transfer to the account below and send your receipt. A sub-admin confirms it by hand."
+          />
+        </fieldset>
+      ) : null}
+
+      {payMethod === "transfer" || !paystackEnabled || priced.total === 0 ? (
+        <div className="rounded-lg border bg-muted/40 p-4">
+          <p className="text-sm font-semibold">Transfer to</p>
+          <dl className="mt-3 space-y-1.5 text-sm">
+            <Row label="Account name">{EVENT.bank.accountName}</Row>
+            <Row label="Account number">
+              <span className="font-mono font-semibold">{EVENT.bank.accountNumber}</span>
+            </Row>
+            <Row label="Bank">{EVENT.bank.bankName}</Row>
+          </dl>
+          <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+            Screenshot or save this page if you are not paying immediately. After submitting you
+            can upload your proof of payment, or pay online by card. Accommodation is reserved
+            only once payment is confirmed.
+          </p>
+        </div>
+      ) : null}
 
       <Controller
         control={control}
@@ -768,6 +895,47 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   )
 }
 
+/** A selectable payment method, styled like the accommodation options. */
+function PayOption({
+  checked,
+  onSelect,
+  icon,
+  title,
+  description,
+}: {
+  checked: boolean
+  onSelect: () => void
+  icon: React.ReactNode
+  title: string
+  description: string
+}) {
+  return (
+    <label
+      className={cn(
+        "flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors",
+        checked ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+      )}
+    >
+      <input
+        type="radio"
+        name="payMethod"
+        checked={checked}
+        onChange={onSelect}
+        className="mt-1 size-4 accent-primary"
+      />
+      <span className="flex-1">
+        <span className="flex items-center gap-2 text-sm font-medium">
+          {icon}
+          {title}
+        </span>
+        <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">
+          {description}
+        </span>
+      </span>
+    </label>
+  )
+}
+
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-4">
@@ -781,11 +949,33 @@ function SubmittedPanel({
   accommodationName,
   totalDue,
   email,
+  delegateId,
+  paystackEnabled,
 }: {
   accommodationName: string
   totalDue: number
   email?: string
+  delegateId: string
+  paystackEnabled: boolean
 }) {
+  const [paying, setPaying] = useState(false)
+
+  // Someone who chose a transfer — or whose checkout failed — can still pay
+  // online from here without going hunting for the status page.
+  async function payOnline() {
+    setPaying(true)
+    try {
+      const result = await initializePayment({ delegateId })
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      window.location.href = result.authorizationUrl
+    } finally {
+      setPaying(false)
+    }
+  }
+
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-16">
       <div className="flex size-11 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
@@ -815,9 +1005,22 @@ function SubmittedPanel({
         </dl>
       </div>
 
-      <a href="/status" className={buttonVariants({ size: "lg", className: "mt-7" })}>
-        Upload proof of payment
-      </a>
+      <div className="mt-7 flex flex-wrap gap-3">
+        {paystackEnabled && totalDue > 0 ? (
+          <Button size="lg" onClick={payOnline} disabled={paying}>
+            {paying ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <CreditCard className="size-4" />
+            )}
+            Pay {formatNaira(totalDue)} online
+          </Button>
+        ) : null}
+
+        <a href="/status" className={buttonVariants({ size: "lg", variant: "outline" })}>
+          Upload proof of payment
+        </a>
+      </div>
     </div>
   )
 }

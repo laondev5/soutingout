@@ -4,10 +4,11 @@ import { connectDB } from "@/lib/mongoose"
 import { requireSuperAdmin } from "@/lib/permissions"
 import { buttonVariants } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Pagination } from "@/components/dashboard/Pagination"
+import { readPageSize } from "@/lib/list-params"
 
 export const dynamic = "force-dynamic"
 
-const PAGE_SIZE = 50
 
 export default async function ActivityPage({ searchParams }: PageProps<"/dashboard/activity">) {
   await requireSuperAdmin()
@@ -15,6 +16,7 @@ export default async function ActivityPage({ searchParams }: PageProps<"/dashboa
 
   const params = await searchParams
   const page = Math.max(1, Number(typeof params.page === "string" ? params.page : "1") || 1)
+  const PAGE_SIZE = readPageSize(params.perPage)
 
   const [entries, total] = await Promise.all([
     ActivityLogModel.find({})
@@ -55,7 +57,7 @@ export default async function ActivityPage({ searchParams }: PageProps<"/dashboa
                 {entry.actorUserId ? (names.get(String(entry.actorUserId)) ?? "Unknown") : "System"}
               </span>
               <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                {new Date(entry.createdAt ?? Date.now()).toLocaleString()}
+                {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "—"}
               </span>
               {Object.keys(entry.details ?? {}).length > 0 ? (
                 <p className="w-full truncate font-mono text-xs text-muted-foreground">
@@ -67,31 +69,7 @@ export default async function ActivityPage({ searchParams }: PageProps<"/dashboa
         </ul>
       )}
 
-      {pages > 1 ? (
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">
-            Page {page} of {pages}
-          </span>
-          <div className="flex gap-2">
-            {page > 1 ? (
-              <Link
-                href={`/dashboard/activity?page=${page - 1}`}
-                className={buttonVariants({ variant: "outline", size: "sm" })}
-              >
-                Previous
-              </Link>
-            ) : null}
-            {page < pages ? (
-              <Link
-                href={`/dashboard/activity?page=${page + 1}`}
-                className={buttonVariants({ variant: "outline", size: "sm" })}
-              >
-                Next
-              </Link>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+      <Pagination page={page} pages={pages} total={total} pageSize={PAGE_SIZE} label="entries" />
     </div>
   )
 }

@@ -7,12 +7,16 @@ import {
   type AccommodationRow,
 } from "@/components/dashboard/AccommodationManager"
 import type { PricingMode } from "@/lib/constants"
+import { readView } from "@/lib/list-params"
 
 // Bed counts move as people register, so this page is never cached.
 export const dynamic = "force-dynamic"
 
-export default async function AccommodationsPage() {
+export default async function AccommodationsPage({
+  searchParams,
+}: PageProps<"/dashboard/accommodations">) {
   await requireSuperAdmin()
+  const params = await searchParams
   await connectDB()
 
   const [accommodations, held] = await Promise.all([
@@ -49,5 +53,11 @@ export default async function AccommodationsPage() {
     }
   })
 
-  return <AccommodationManager accommodations={rows} uploadsEnabled={isCloudinaryConfigured()} />
+  return (
+    <AccommodationManager
+      accommodations={rows}
+      uploadsEnabled={isCloudinaryConfigured()}
+      view={readView(params.view)}
+    />
+  )
 }

@@ -61,3 +61,57 @@ Never poll from the client.
   directly with `components/registration/Field.tsx`.
 - **`--font-sans` must be the Geist variable name** in `layout.tsx`; shadcn's
   tokens read `--font-sans`, and a mismatch silently falls back to serif.
+
+## Verifying the integrations
+
+`npm run test:integrations` makes one real call to each third party and prints
+what worked. `npm run test:email you@example.com` sends an actual message.
+
+- **SMTP is on port 465, not 587.** Port 587 is blocked on the developer's
+  network; nodemailer picks `secure: true` from the port number, so changing
+  `SMTP_PORT` is the whole fix.
+- **`server-only` throws in plain Node.** Scripts that import a `server-only`
+  module must run under `node --conditions=react-server`, which resolves the
+  package to its empty stub. `scripts/test-integrations.ts` avoids the problem
+  by restating the few constants it needs.
+- **Mongoose 9 rejects an aggregation pipeline in `findOneAndUpdate`** unless
+  `updatePipeline: true` is set. Prefer plain `$inc`/`$set` operators — the
+  reconciliation claim was written as a pipeline and failed at runtime while
+  type-checking and building cleanly.
+- **Index changes need `npm run sync:indexes`.** Mongoose only auto-builds
+  indexes in development, and `syncIndexes` also drops ones no longer declared.
+
+## CMS and form builder
+
+`/dashboard/cms` edits page copy as ordered widget blocks; `/dashboard/form-builder`
+edits the registration questions. Both are super-admin only.
+
+- **Adding a widget** means one entry in `src/lib/cms-blocks.ts` (name, icon,
+  defaults, property list) plus one `case` in `BlockRenderer`. The palette, the
+  inspector and the canvas all read from that spec.
+- **`cms-blocks.ts` and `form-fields.ts` must stay client-safe.** They are
+  imported by both the editor and the server; a `server-only` import there
+  drags mongoose into the browser bundle and fails the build.
+- **Built-in form fields cannot be deleted or retyped.** Pricing, bed
+  allocation and the Sheet import all key off `fullName`, `comingWith`,
+  `accommodationId` and friends. Only wording is editable; locked ones stay
+  required.
+- Custom answers live in `Delegate.customFields` and are validated server-side
+  by `customFieldsSchema()` against the live definitions — never trusted from
+  the browser.
+
+## Gotchas found the hard way (continued)
+
+- **Next 16 split `revalidateTag`.** It now takes a cache-life profile and
+  expires lazily; use `updateTag(tag)` inside a Server Action when the change
+  must be visible on the very next render.
+- **Query-param helpers must not live in a `"use client"` module.** Server
+  components call `readPageSize` / `readView` while rendering, and importing
+  them from a client file throws "Attempted to call X from the server". They
+  live in `src/lib/list-params.ts`.
+- **Give every `DndContext` an explicit `id`.** dnd-kit numbers its
+  accessibility ids from a module-level counter, so server and client disagree
+  and React reports a hydration mismatch. `useUniqueId` returns the supplied
+  id verbatim.
+- **Pagination is always rendered**, even on a single page. Hiding it left no
+  visible sign the list was paginated and no way to change the page size.

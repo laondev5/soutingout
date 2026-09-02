@@ -1,5 +1,6 @@
 import Link from "next/link"
-import { requireUser } from "@/lib/permissions"
+import { Download } from "lucide-react"
+import { can, requireUser } from "@/lib/permissions"
 import { listDelegates } from "@/lib/delegates"
 import { listAccommodationOptions } from "@/lib/accommodation"
 import { formatNaira, REGISTRATION_STATUSES, type RegistrationStatus } from "@/lib/constants"
@@ -15,6 +16,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { StatusBadge } from "@/components/dashboard/StatusBadge"
+import { Pagination } from "@/components/dashboard/Pagination"
+import { readPageSize } from "@/lib/list-params"
 
 export default async function DelegatesPage({ searchParams }: PageProps<"/dashboard/delegates">) {
   const user = await requireUser()
@@ -27,20 +30,12 @@ export default async function DelegatesPage({ searchParams }: PageProps<"/dashbo
     : "all"
   const accommodationId = typeof params.accommodation === "string" ? params.accommodation : ""
   const page = Number(typeof params.page === "string" ? params.page : "1") || 1
+  const pageSize = readPageSize(params.perPage)
 
   const [result, accommodations] = await Promise.all([
-    listDelegates(user, { search, status, accommodationId: accommodationId || undefined, page }),
+    listDelegates(user, { search, status, accommodationId: accommodationId || undefined, page, pageSize }),
     listAccommodationOptions({ includeInactive: true }),
   ])
-
-  function pageHref(target: number) {
-    const query = new URLSearchParams()
-    if (search) query.set("search", search)
-    if (status !== "all") query.set("status", status)
-    if (accommodationId) query.set("accommodation", accommodationId)
-    query.set("page", String(target))
-    return `/dashboard/delegates?${query}`
-  }
 
   return (
     <div className="space-y-6">
@@ -52,6 +47,17 @@ export default async function DelegatesPage({ searchParams }: PageProps<"/dashbo
             {status !== "all" ? ` · ${status}` : ""}
           </p>
         </div>
+
+        {can(user, "delegates.export") ? (
+          // A plain link, so the browser downloads it rather than the client
+          // having to buffer a whole workbook in memory.
+          <a
+            href={`/api/export/delegates${status !== "all" ? `?status=${status}` : ""}`}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            <Download className="size-4" /> Export XLSX
+          </a>
+        ) : null}
       </div>
 
       {/* A plain GET form keeps filters shareable as URLs and working without JS. */}
@@ -176,31 +182,13 @@ export default async function DelegatesPage({ searchParams }: PageProps<"/dashbo
         </div>
       )}
 
-      {result.pageCount > 1 ? (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
-            Page {result.page} of {result.pageCount}
-          </p>
-          <div className="flex gap-2">
-            {result.page > 1 ? (
-              <Link
-                href={pageHref(result.page - 1)}
-                className={buttonVariants({ size: "sm", variant: "outline" })}
-              >
-                Previous
-              </Link>
-            ) : null}
-            {result.page < result.pageCount ? (
-              <Link
-                href={pageHref(result.page + 1)}
-                className={buttonVariants({ size: "sm", variant: "outline" })}
-              >
-                Next
-              </Link>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+      <Pagination
+        page={result.page}
+        pages={result.pageCount}
+        total={result.total}
+        pageSize={result.pageSize}
+        label="delegates"
+      />
     </div>
   )
 }

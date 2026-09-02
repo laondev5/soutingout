@@ -10,16 +10,31 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { cn } from "@/lib/utils"
 
 export default async function AnalyticsPage() {
   await requireSuperAdmin()
   const data = await analyticsSnapshot()
 
+  // One tone per meaning, matching the status badges: green is money in and
+  // people confirmed, amber is what is still outstanding.
   const stats = [
-    { label: "Delegates", value: String(data.totals.delegates) },
-    { label: "Confirmed", value: String(data.totals.confirmed) },
-    { label: "Received", value: formatNaira(data.totals.revenue) },
-    { label: "Outstanding", value: formatNaira(data.totals.outstanding) },
+    { label: "Delegates", value: String(data.totals.delegates), tone: "" },
+    {
+      label: "Confirmed",
+      value: String(data.totals.confirmed),
+      tone: "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/40",
+    },
+    {
+      label: "Received",
+      value: formatNaira(data.totals.revenue),
+      tone: "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/40",
+    },
+    {
+      label: "Outstanding",
+      value: formatNaira(data.totals.outstanding),
+      tone: "border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/40",
+    },
   ]
 
   return (
@@ -33,7 +48,7 @@ export default async function AnalyticsPage() {
 
       <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {stats.map((stat) => (
-          <div key={stat.label} className="rounded-xl border p-4">
+          <div key={stat.label} className={cn("rounded-xl border p-4", stat.tone)}>
             <dt className="text-xs uppercase tracking-wide text-muted-foreground">{stat.label}</dt>
             <dd className="mt-1 text-xl font-semibold tabular-nums">{stat.value}</dd>
           </div>
