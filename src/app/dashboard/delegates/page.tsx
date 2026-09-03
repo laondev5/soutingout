@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { StatusBadge } from "@/components/dashboard/StatusBadge"
+import { DelegateRowActions } from "@/components/dashboard/DelegateRowActions"
 import { Pagination } from "@/components/dashboard/Pagination"
 import { readPageSize } from "@/lib/list-params"
 
@@ -122,6 +123,9 @@ export default async function DelegatesPage({ searchParams }: PageProps<"/dashbo
                 <TableHead className="text-right">Balance</TableHead>
                 <TableHead>Status</TableHead>
                 {user.role === "super_admin" ? <TableHead>Sub-admin</TableHead> : null}
+                <TableHead className="w-12 text-right">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -175,6 +179,20 @@ export default async function DelegatesPage({ searchParams }: PageProps<"/dashbo
                       )}
                     </TableCell>
                   ) : null}
+                  <TableCell className="text-right">
+                    <DelegateRowActions
+                      delegate={{
+                        id: delegate.id,
+                        fullName: delegate.fullName,
+                        balance: delegate.balance,
+                        isCancelled: delegate.registrationStatus === "cancelled",
+                        hasIdentifiers: Boolean(delegate.lffId),
+                      }}
+                      canConfirmPayments={can(user, "payments.confirm")}
+                      canEdit={can(user, "delegates.edit")}
+                      canDelete={user.role === "super_admin"}
+                    />
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

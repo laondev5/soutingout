@@ -27,7 +27,7 @@ export default async function StatusPage({ searchParams }: PageProps<"/status">)
   sweepPaymentsInBackground()
 
   return (
-    <main className="flex-1">
+    <main className="flex-1 cms-canvas">
       <div className="border-b">
         <div className="mx-auto flex w-full max-w-2xl items-center justify-between gap-4 px-6 py-4">
           <Link href="/">

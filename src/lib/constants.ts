@@ -67,6 +67,21 @@ export const PERMISSIONS = [
 ] as const
 export type Permission = (typeof PERMISSIONS)[number]
 
+/** Plain-English names for the permission checkboxes on the staff screens. */
+export const PERMISSION_LABELS: Record<Permission, string> = {
+  "delegates.view": "View delegates",
+  "delegates.edit": "Edit delegate details",
+  "delegates.assign": "Reassign delegates",
+  "delegates.import": "Import from a spreadsheet",
+  "delegates.export": "Export to Excel",
+  "payments.view": "View payments",
+  "payments.confirm": "Confirm payments",
+  "accommodations.manage": "Manage accommodation",
+  "users.manage": "Manage staff accounts",
+  "analytics.view": "View analytics",
+  "activity.view": "View the activity log",
+}
+
 /** Granted to a sub-admin unless the super admin narrows it. */
 export const DEFAULT_SUB_ADMIN_PERMISSIONS: Permission[] = [
   "delegates.view",

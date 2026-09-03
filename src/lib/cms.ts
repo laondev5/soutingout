@@ -1,11 +1,12 @@
 import "server-only"
 import { unstable_cache, updateTag } from "next/cache"
-import { SiteContentModel } from "@/lib/db-models"
+import { SiteContentModel, SitePageModel } from "@/lib/db-models"
 import { connectDB } from "@/lib/mongoose"
 import { EVENT, formatNaira } from "@/lib/constants"
-import type { Block } from "@/lib/cms-blocks"
+import { toSections, type Block, type Section } from "@/lib/cms-blocks"
 
 const CACHE_TAG = "site-content"
+const PAGES_TAG = "site-pages"
 
 /**
  * What each section shows before anyone edits it — the copy that was
@@ -198,16 +199,21 @@ export function defaultBlocksFor(slug: string): Block[] {
   return structuredClone(DEFAULT_CONTENT[slug] ?? [])
 }
 
-async function loadPublished(slug: string): Promise<Block[]> {
+/** The shipped copy as a single unstyled section. */
+export function defaultSectionsFor(slug: string): Section[] {
+  return toSections({ blocks: defaultBlocksFor(slug) })
+}
+
+async function loadPublished(slug: string): Promise<Section[]> {
   await connectDB()
 
   const doc = await SiteContentModel.findOne({ slug }).lean()
 
-  // A section that has never been saved falls back to the shipped copy, so
-  // the site is never blank just because nobody has opened the editor.
-  if (!doc) return defaultBlocksFor(slug)
+  // A slot that has never been saved falls back to the shipped copy, so the
+  // site is never blank just because nobody has opened the editor.
+  if (!doc) return defaultSectionsFor(slug)
 
-  return doc.blocks as Block[]
+  return toSections({ sections: doc.sections, blocks: doc.blocks })
 }
 
 /**
@@ -221,10 +227,10 @@ export const getSection = (slug: string) =>
     tags: [CACHE_TAG],
   })()
 
-/** Several sections at once, for a page that renders more than one. */
+/** Several slots at once, for a page that renders more than one. */
 export async function getSections(slugs: string[]) {
   const entries = await Promise.all(slugs.map(async (slug) => [slug, await getSection(slug)] as const))
-  return Object.fromEntries(entries) as Record<string, Block[]>
+  return Object.fromEntries(entries) as Record<string, Section[]>
 }
 
 /** Editor view: the draft if one exists, otherwise what is published. */
@@ -234,13 +240,19 @@ export async function getEditableSection(slug: string) {
   const doc = await SiteContentModel.findOne({ slug }).lean()
 
   if (!doc) {
-    return { blocks: defaultBlocksFor(slug), hasDraft: false, publishedAt: null }
+    return { sections: defaultSectionsFor(slug), hasDraft: false, publishedAt: null }
   }
 
-  const hasDraft = Array.isArray(doc.draftBlocks)
+  // A draft can be either shape: `draftSections` once the section editor has
+  // saved it, `draftBlocks` if it was left over from the flat-list editor.
+  const hasDraft = Array.isArray(doc.draftSections) || Array.isArray(doc.draftBlocks)
+
+  const sections = hasDraft
+    ? toSections({ sections: doc.draftSections, blocks: doc.draftBlocks })
+    : toSections({ sections: doc.sections, blocks: doc.blocks })
 
   return {
-    blocks: (hasDraft ? doc.draftBlocks : doc.blocks) as Block[],
+    sections,
     hasDraft,
     publishedAt: doc.publishedAt ? doc.publishedAt.toISOString() : null,
   }
@@ -256,4 +268,109 @@ export async function getEditableSection(slug: string) {
  */
 export function invalidateSiteContent() {
   updateTag(CACHE_TAG)
+}
+
+// ── Custom pages ─────────────────────────────────────────────────────
+
+export type PublicPage = {
+  id: string
+  slug: string
+  title: string
+  navLabel: string
+  showInNav: boolean
+  navOrder: number
+  seoDescription: string
+  sections: Section[]
+}
+
+async function loadPage(slug: string): Promise<PublicPage | null> {
+  await connectDB()
+
+  const doc = await SitePageModel.findOne({ slug, isPublished: true }).lean()
+  if (!doc) return null
+
+  return {
+    id: String(doc._id),
+    slug: doc.slug,
+    title: doc.title,
+    navLabel: doc.navLabel || doc.title,
+    showInNav: doc.showInNav,
+    navOrder: doc.navOrder,
+    seoDescription: doc.seoDescription,
+    sections: toSections({ sections: doc.sections }),
+  }
+}
+
+/** A published page by its address. Cached until a page is published. */
+export const getPublishedPage = (slug: string) =>
+  unstable_cache(() => loadPage(slug), ["site-page", slug], {
+    revalidate: 300,
+    tags: [PAGES_TAG],
+  })()
+
+async function loadNavPages() {
+  await connectDB()
+
+  const docs = await SitePageModel.find({ isPublished: true, showInNav: true })
+    .select("slug title navLabel navOrder")
+    .sort({ navOrder: 1, title: 1 })
+    .lean()
+
+  return docs.map((doc) => ({
+    slug: doc.slug,
+    label: doc.navLabel || doc.title,
+  }))
+}
+
+/** Published pages that asked to appear in the site header. */
+export const getNavPages = () =>
+  unstable_cache(loadNavPages, ["site-nav"], { revalidate: 300, tags: [PAGES_TAG] })()
+
+/** Editor view of one page: the draft if there is one, otherwise what is live. */
+export async function getEditablePage(pageId: string) {
+  await connectDB()
+
+  const doc = await SitePageModel.findById(pageId).lean()
+  if (!doc) return null
+
+  const hasDraft = Array.isArray(doc.draftSections)
+
+  return {
+    id: String(doc._id),
+    slug: doc.slug,
+    title: doc.title,
+    navLabel: doc.navLabel,
+    showInNav: doc.showInNav,
+    navOrder: doc.navOrder,
+    seoDescription: doc.seoDescription,
+    isPublished: doc.isPublished,
+    hasDraft,
+    publishedAt: doc.publishedAt ? doc.publishedAt.toISOString() : null,
+    sections: toSections({ sections: hasDraft ? doc.draftSections : doc.sections }),
+  }
+}
+
+/** Every page, for the dashboard list. */
+export async function listPages() {
+  await connectDB()
+
+  const docs = await SitePageModel.find()
+    .select("slug title isPublished showInNav navOrder publishedAt draftSections updatedAt")
+    .sort({ navOrder: 1, title: 1 })
+    .lean()
+
+  return docs.map((doc) => ({
+    id: String(doc._id),
+    slug: doc.slug,
+    title: doc.title,
+    isPublished: doc.isPublished,
+    showInNav: doc.showInNav,
+    hasDraft: Array.isArray(doc.draftSections),
+    publishedAt: doc.publishedAt ? doc.publishedAt.toISOString() : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : null,
+  }))
+}
+
+export function invalidateSitePages() {
+  updateTag(PAGES_TAG)
 }

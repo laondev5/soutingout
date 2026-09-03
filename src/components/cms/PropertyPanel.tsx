@@ -148,6 +148,29 @@ function PropertyField({
       )
     }
 
+    case "imageList": {
+      const images = Array.isArray(value)
+        ? (value as { url?: unknown; publicId?: unknown }[]).map((item) => ({
+            url: String(item?.url ?? ""),
+            publicId: String(item?.publicId ?? ""),
+          }))
+        : []
+
+      return (
+        <div className="space-y-1.5">
+          <Label>{prop.label}</Label>
+          <ImageUploader
+            kind="accommodation"
+            max={12}
+            label="Add pictures"
+            images={images}
+            onChange={onChange}
+          />
+          {help}
+        </div>
+      )
+    }
+
     case "stringList":
       return (
         <ListEditor

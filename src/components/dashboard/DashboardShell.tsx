@@ -64,6 +64,9 @@ export function DashboardShell({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+
+  // Routes that lay out their own full-width workspace.
+  const wide = pathname.startsWith("/dashboard/cms") || pathname.startsWith("/dashboard/form-builder")
   const [open, setOpen] = useState(false)
 
   function isActive(href: string) {
@@ -165,7 +168,17 @@ export function DashboardShell({
           <LogoLockup width={28} />
         </header>
 
-        <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">{children}</main>
+        {/* The builders need every pixel the browser has — a 1280px preview
+            inside a 1024px column is not a preview. Everything else stays in
+            a readable column. */}
+        <main
+          className={cn(
+            "w-full flex-1 py-8",
+            wide ? "px-4" : "mx-auto max-w-5xl px-6"
+          )}
+        >
+          {children}
+        </main>
       </div>
     </div>
   )
