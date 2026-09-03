@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 
-/** Reachable without a session. Everything else under the matcher needs one. */
-const PUBLIC_PATHS = ["/", "/register", "/status", "/auth/login"]
+/**
+ * The only parts of the site that need a session.
+ *
+ * Listed as what is *closed* rather than what is open, because the super admin
+ * can publish pages at any address they like — an allow-list would send every
+ * visitor to one of those pages to the login screen.
+ */
+const PROTECTED_PREFIXES = ["/dashboard", "/pastor"]
 
 /** Route prefix → roles allowed to open it. */
 const ROLE_GATES: { prefix: string; roles: string[] }[] = [
@@ -24,15 +30,15 @@ function homeFor(role?: string) {
 export const proxy = auth((req) => {
   const pathname = req.nextUrl.pathname
   const user = req.auth?.user
-  const isPublic = PUBLIC_PATHS.some(
-    (path) => pathname === path || pathname.startsWith(`${path}/`)
+  const isProtected = PROTECTED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   )
 
   if (user && pathname === "/auth/login") {
     return NextResponse.redirect(new URL(homeFor(user.role), req.nextUrl))
   }
 
-  if (isPublic) {
+  if (!isProtected) {
     return NextResponse.next()
   }
 

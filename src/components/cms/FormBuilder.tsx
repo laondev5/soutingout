@@ -20,7 +20,18 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { Eye, EyeOff, GripVertical, Loader2, Lock, Pencil, Plus, Trash2 } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  EyeOff,
+  GripVertical,
+  Loader2,
+  Lock,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -44,21 +55,26 @@ import {
   updateFormField,
 } from "@/actions/form-builder.actions"
 import {
+  createFormStep,
+  deleteFormStep,
+  reorderFormSteps,
+  updateFormStep,
+} from "@/actions/forms.actions"
+import {
   FIELD_TYPES,
   FIELD_TYPE_LABELS,
-  FORM_STEPS,
   needsOptions,
   type FieldType,
   type FormFieldConfig,
-  type FormStepId,
 } from "@/lib/form-fields"
+import type { FormStep, FormSummary } from "@/lib/forms"
 import { cn } from "@/lib/utils"
 
 type Draft = {
   id?: string
   label: string
   type: FieldType
-  step: FormStepId
+  step: string
   required: boolean
   placeholder: string
   helpText: string
@@ -68,7 +84,7 @@ type Draft = {
   key?: string
 }
 
-function blank(step: FormStepId): Draft {
+function blank(step: string): Draft {
   return {
     label: "",
     type: "text",
@@ -81,6 +97,8 @@ function blank(step: FormStepId): Draft {
     isLocked: false,
   }
 }
+
+type StepDraft = { id?: string; name: string; description: string }
 
 function toDraft(field: FormFieldConfig): Draft {
   return {
@@ -98,9 +116,18 @@ function toDraft(field: FormFieldConfig): Draft {
   }
 }
 
-export function FormBuilder({ fields }: { fields: FormFieldConfig[] }) {
+export function FormBuilder({
+  form,
+  fields,
+}: {
+  form: FormSummary
+  fields: FormFieldConfig[]
+}) {
   const router = useRouter()
   const [draft, setDraft] = useState<Draft | null>(null)
+  const [stepDraft, setStepDraft] = useState<StepDraft | null>(null)
+  const [removingStep, setRemovingStep] = useState<FormStep | null>(null)
+  const [moveTo, setMoveTo] = useState("")
   const [pending, startTransition] = useTransition()
 
   // Local copy so a drag reorders instantly and the server catches up.
@@ -111,11 +138,11 @@ export function FormBuilder({ fields }: { fields: FormFieldConfig[] }) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
-  function byStep(step: FormStepId) {
+  function byStep(step: string) {
     return local.filter((field) => field.step === step).sort((a, b) => a.order - b.order)
   }
 
-  function onDragEnd(step: FormStepId, event: DragEndEvent) {
+  function onDragEnd(step: string, event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
 
@@ -132,7 +159,11 @@ export function FormBuilder({ fields }: { fields: FormFieldConfig[] }) {
     )
 
     startTransition(async () => {
-      const result = await reorderFormFields({ step, ids: reordered.map((f) => f.id) })
+      const result = await reorderFormFields({
+        formId: form.id,
+        step,
+        ids: reordered.map((f) => f.id),
+      })
       if (!result.ok) {
         toast.error(result.error)
         router.refresh()
@@ -140,10 +171,84 @@ export function FormBuilder({ fields }: { fields: FormFieldConfig[] }) {
     })
   }
 
+
+  function saveStep() {
+    if (!stepDraft) return
+
+    startTransition(async () => {
+      const result = stepDraft.id
+        ? await updateFormStep({
+            formId: form.id,
+            stepId: stepDraft.id,
+            name: stepDraft.name,
+            description: stepDraft.description,
+          })
+        : await createFormStep({
+            formId: form.id,
+            name: stepDraft.name,
+            description: stepDraft.description,
+          })
+
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+
+      toast.success(stepDraft.id ? "Step updated." : "Step added.")
+      setStepDraft(null)
+      router.refresh()
+    })
+  }
+
+  function confirmRemoveStep() {
+    if (!removingStep) return
+
+    startTransition(async () => {
+      const result = await deleteFormStep({
+        formId: form.id,
+        stepId: removingStep.id,
+        moveFieldsTo: moveTo || undefined,
+      })
+
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+
+      toast.success(
+        result.moved > 0
+          ? `Step removed. ${result.moved} question${result.moved === 1 ? "" : "s"} moved.`
+          : "Step removed."
+      )
+      setRemovingStep(null)
+      setMoveTo("")
+      router.refresh()
+    })
+  }
+
+  function moveStep(stepId: string, direction: -1 | 1) {
+    const order = form.steps.map((step) => step.id)
+    const from = order.indexOf(stepId)
+    const to = from + direction
+    if (from === -1 || to < 0 || to >= order.length) return
+
+    const next = arrayMove(order, from, to)
+
+    startTransition(async () => {
+      const result = await reorderFormSteps({ formId: form.id, stepIds: next })
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      router.refresh()
+    })
+  }
+
   function save() {
     if (!draft) return
 
     const payload = {
+      formId: form.id,
       label: draft.label,
       type: draft.type,
       step: draft.step,
@@ -194,32 +299,99 @@ export function FormBuilder({ fields }: { fields: FormFieldConfig[] }) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Form builder</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Add questions to the registration form, reword existing ones, and drag to reorder.
-          </p>
-        </div>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          {form.kind === "registration"
+            ? "Questions on the public registration stepper."
+            : `Questions on this form. Answers go to the ${form.collectionName} collection.`}
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setStepDraft({ name: "", description: "" })}
+        >
+          <Plus className="size-3.5" /> Add step
+        </Button>
       </div>
 
-      <p className="rounded-lg border border-dashed p-3 text-xs leading-relaxed text-muted-foreground">
-        Fields marked <Lock className="inline size-3" /> are wired into pricing, bed allocation and
-        the Google Sheet import. You can reword them, but they cannot be removed or retyped.
-      </p>
+      {form.kind === "registration" ? (
+        <p className="rounded-lg border border-dashed p-3 text-xs leading-relaxed text-muted-foreground">
+          Fields marked <Lock className="inline size-3" /> are wired into pricing, bed allocation
+          and the Google Sheet import. You can reword them, but they cannot be removed or retyped.
+          The steps they sit on cannot be removed either.
+        </p>
+      ) : null}
 
       <div className="space-y-6">
-        {FORM_STEPS.map((step) => {
+        {form.steps.map((step, stepIndex) => {
           const inStep = byStep(step.id)
 
           return (
             <section key={step.id} className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-sm font-medium">{step.name}</h2>
-                <Button size="sm" variant="outline" onClick={() => setDraft(blank(step.id))}>
-                  <Plus className="size-3.5" /> Add field
-                </Button>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+                    {stepIndex + 1}
+                  </span>
+                  <h2 className="truncate text-sm font-medium">{step.name}</h2>
+                  {step.isBuiltIn ? <Lock className="size-3 text-muted-foreground" /> : null}
+                  {step.description ? (
+                    <span className="hidden truncate text-xs text-muted-foreground sm:inline">
+                      — {step.description}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1">
+                  <button
+                    type="button"
+                    aria-label={`Move ${step.name} up`}
+                    disabled={stepIndex === 0 || pending}
+                    onClick={() => moveStep(step.id, -1)}
+                    className="rounded p-1 text-muted-foreground hover:bg-muted disabled:opacity-30"
+                  >
+                    <ChevronUp className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move ${step.name} down`}
+                    disabled={stepIndex === form.steps.length - 1 || pending}
+                    onClick={() => moveStep(step.id, 1)}
+                    className="rounded p-1 text-muted-foreground hover:bg-muted disabled:opacity-30"
+                  >
+                    <ChevronDown className="size-3.5" />
+                  </button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      setStepDraft({
+                        id: step.id,
+                        name: step.name,
+                        description: step.description,
+                      })
+                    }
+                  >
+                    <Pencil className="size-3.5" /> Rename
+                  </Button>
+                  {!step.isBuiltIn ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => {
+                        setRemovingStep(step)
+                        setMoveTo("")
+                      }}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  ) : null}
+                  <Button size="sm" variant="outline" onClick={() => setDraft(blank(step.id))}>
+                    <Plus className="size-3.5" /> Add field
+                  </Button>
+                </div>
               </div>
 
               {inStep.length === 0 ? (
@@ -263,11 +435,111 @@ export function FormBuilder({ fields }: { fields: FormFieldConfig[] }) {
 
       <FieldDialog
         draft={draft}
+        steps={form.steps}
         pending={pending}
         onChange={setDraft}
         onClose={() => setDraft(null)}
         onSave={save}
       />
+
+      <Dialog open={stepDraft !== null} onOpenChange={(open) => !open && setStepDraft(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{stepDraft?.id ? "Rename step" : "New step"}</DialogTitle>
+            <DialogDescription>
+              A step is one screen of the form. Questions are filed under whichever step you put
+              them on.
+            </DialogDescription>
+          </DialogHeader>
+
+          {stepDraft ? (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="step-name">Name</Label>
+                <Input
+                  id="step-name"
+                  value={stepDraft.name}
+                  placeholder="e.g. About you"
+                  onChange={(event) => setStepDraft({ ...stepDraft, name: event.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="step-description">Description</Label>
+                <Textarea
+                  id="step-description"
+                  rows={2}
+                  placeholder="Shown under the step name. Optional."
+                  value={stepDraft.description}
+                  onChange={(event) =>
+                    setStepDraft({ ...stepDraft, description: event.target.value })
+                  }
+                />
+              </div>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setStepDraft(null)} disabled={pending}>
+              Cancel
+            </Button>
+            <Button onClick={saveStep} disabled={pending || !stepDraft?.name.trim()}>
+              {pending ? <Loader2 className="size-4 animate-spin" /> : null}
+              {stepDraft?.id ? "Save" : "Add step"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={removingStep !== null} onOpenChange={(open) => !open && setRemovingStep(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove {removingStep?.name}?</DialogTitle>
+            <DialogDescription>
+              {removingStep && byStep(removingStep.id).length > 0
+                ? "This step still has questions. Choose where they should go — deleting a question would lose the answers people already gave it."
+                : "This step has no questions on it."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {removingStep && byStep(removingStep.id).length > 0 ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="move-to">Move its questions to</Label>
+              <select
+                id="move-to"
+                value={moveTo}
+                onChange={(event) => setMoveTo(event.target.value)}
+                className="h-9 w-full rounded-md border bg-transparent px-2 text-sm"
+              >
+                <option value="">Choose…</option>
+                {form.steps
+                  .filter((step) => step.id !== removingStep.id)
+                  .map((step) => (
+                    <option key={step.id} value={step.id}>
+                      {step.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRemovingStep(null)} disabled={pending}>
+              Keep
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmRemoveStep}
+              disabled={
+                pending ||
+                (removingStep !== null && byStep(removingStep.id).length > 0 && !moveTo)
+              }
+            >
+              {pending ? <Loader2 className="size-4 animate-spin" /> : null}
+              Remove step
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -356,12 +628,14 @@ function SortableField({
 
 function FieldDialog({
   draft,
+  steps,
   pending,
   onChange,
   onClose,
   onSave,
 }: {
   draft: Draft | null
+  steps: FormStep[]
   pending: boolean
   onChange: (draft: Draft) => void
   onClose: () => void
@@ -418,11 +692,11 @@ function FieldDialog({
                   value={draft.step}
                   disabled={draft.isBuiltIn}
                   onChange={(event) =>
-                    onChange({ ...draft, step: event.target.value as FormStepId })
+                    onChange({ ...draft, step: event.target.value })
                   }
                   className="h-9 w-full rounded-md border bg-transparent px-2 text-sm disabled:opacity-50"
                 >
-                  {FORM_STEPS.map((step) => (
+                  {steps.map((step) => (
                     <option key={step.id} value={step.id}>
                       {step.name}
                     </option>

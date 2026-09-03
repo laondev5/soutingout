@@ -492,14 +492,30 @@ export interface ISiteBlock {
   type: string
   props: Record<string, unknown>
   visible: boolean
+  style: Record<string, unknown>
+}
+
+/** A band of the page. Sections carry backgrounds; blocks live inside them. */
+export interface ISiteSection {
+  id: string
+  name: string
+  blocks: ISiteBlock[]
+  visible: boolean
+  style: Record<string, unknown>
 }
 
 export interface ISiteContent extends Timestamps {
   _id: Types.ObjectId
   slug: string
+  /**
+   * Legacy flat block list. Content saved before sections existed still lives
+   * here and is read through `toSections`, so nothing needed migrating.
+   */
   blocks: ISiteBlock[]
+  sections: ISiteSection[]
   /** Draft edits are kept apart until the super admin publishes. */
   draftBlocks: ISiteBlock[] | null
+  draftSections: ISiteSection[] | null
   publishedAt: Date | null
   updatedByUserId: Types.ObjectId | null
 }
@@ -510,6 +526,18 @@ const siteBlockSchema = new Schema<ISiteBlock>(
     type: { type: String, required: true },
     props: { type: Schema.Types.Mixed, default: {} },
     visible: { type: Boolean, default: true },
+    style: { type: Schema.Types.Mixed, default: {} },
+  },
+  { _id: false }
+)
+
+const siteSectionSchema = new Schema<ISiteSection>(
+  {
+    id: { type: String, required: true },
+    name: { type: String, default: "Section" },
+    blocks: { type: [siteBlockSchema], default: [] },
+    visible: { type: Boolean, default: true },
+    style: { type: Schema.Types.Mixed, default: {} },
   },
   { _id: false }
 )
@@ -518,7 +546,9 @@ const siteContentSchema = new Schema<ISiteContent>(
   {
     slug: { type: String, required: true, unique: true, trim: true },
     blocks: { type: [siteBlockSchema], default: [] },
+    sections: { type: [siteSectionSchema], default: [] },
     draftBlocks: { type: [siteBlockSchema], default: null },
+    draftSections: { type: [siteSectionSchema], default: null },
     publishedAt: { type: Date, default: null },
     updatedByUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
@@ -533,6 +563,8 @@ export const SiteContentModel = model<ISiteContent>("SiteContent", siteContentSc
 
 export interface IFormField extends Timestamps {
   _id: Types.ObjectId
+  /** Which form the field belongs to. Null means the registration form. */
+  formId: Types.ObjectId | null
   key: string
   label: string
   type: string
@@ -549,7 +581,8 @@ export interface IFormField extends Timestamps {
 
 const formFieldSchema = new Schema<IFormField>(
   {
-    key: { type: String, required: true, unique: true, trim: true },
+    formId: { type: Schema.Types.ObjectId, ref: "FormDefinition", default: null },
+    key: { type: String, required: true, trim: true },
     label: { type: String, required: true, trim: true },
     type: { type: String, required: true },
     step: { type: String, required: true },
@@ -565,7 +598,10 @@ const formFieldSchema = new Schema<IFormField>(
   { timestamps: true }
 )
 
-formFieldSchema.index({ step: 1, order: 1 })
+formFieldSchema.index({ formId: 1, step: 1, order: 1 })
+// Two different forms may both have a "name" field, so the key is only unique
+// within its own form. Replaces the old unique index on `key` alone.
+formFieldSchema.index({ formId: 1, key: 1 }, { unique: true })
 
 export const FormFieldModel = model<IFormField>("FormField", formFieldSchema)
 
@@ -583,3 +619,110 @@ const counterSchema = new Schema<ICounter>({
 })
 
 export const CounterModel = model<ICounter>("Counter", counterSchema)
+
+// ── SitePage ─────────────────────────────────────────────────────────
+// A whole page the super admin builds and publishes at its own URL, as
+// opposed to SiteContent, which fills a fixed slot inside an existing page.
+
+export interface ISitePage extends Timestamps {
+  _id: Types.ObjectId
+  /** URL segment, e.g. "about" serves /about. */
+  slug: string
+  title: string
+  /** Shown in the site header when `showInNav` is on. */
+  navLabel: string
+  showInNav: boolean
+  navOrder: number
+  seoDescription: string
+  isPublished: boolean
+  sections: ISiteSection[]
+  draftSections: ISiteSection[] | null
+  publishedAt: Date | null
+  updatedByUserId: Types.ObjectId | null
+}
+
+const sitePageSchema = new Schema<ISitePage>(
+  {
+    slug: { type: String, required: true, unique: true, trim: true, lowercase: true },
+    title: { type: String, required: true, trim: true },
+    navLabel: { type: String, default: "" },
+    showInNav: { type: Boolean, default: false },
+    navOrder: { type: Number, default: 0 },
+    seoDescription: { type: String, default: "" },
+    isPublished: { type: Boolean, default: false },
+    sections: { type: [siteSectionSchema], default: [] },
+    draftSections: { type: [siteSectionSchema], default: null },
+    publishedAt: { type: Date, default: null },
+    updatedByUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+  },
+  { timestamps: true }
+)
+
+sitePageSchema.index({ isPublished: 1, navOrder: 1 })
+
+export const SitePageModel = model<ISitePage>("SitePage", sitePageSchema)
+
+// ── FormDefinition ───────────────────────────────────────────────────
+// The registration form is one of these (`kind: "registration"`), wired into
+// pricing, beds and LFF IDs. Every other form is standalone: its answers go to
+// its own collection and nothing else in the app depends on them.
+
+export interface IFormStep {
+  id: string
+  name: string
+  description: string
+  order: number
+  /** Built-in steps drive pricing and assignment, so they cannot be removed. */
+  isBuiltIn: boolean
+  isActive: boolean
+}
+
+export interface IFormDefinition extends Timestamps {
+  _id: Types.ObjectId
+  slug: string
+  name: string
+  description: string
+  kind: "registration" | "standalone"
+  /** Where submissions land. Empty for the registration form, which writes Delegates. */
+  collectionName: string
+  isPublished: boolean
+  submitButtonLabel: string
+  successMessage: string
+  /** Emailed a copy of every submission. */
+  notifyEmails: string[]
+  steps: IFormStep[]
+  submissionCount: number
+  createdByUserId: Types.ObjectId | null
+}
+
+const formStepSchema = new Schema<IFormStep>(
+  {
+    id: { type: String, required: true },
+    name: { type: String, required: true, trim: true },
+    description: { type: String, default: "" },
+    order: { type: Number, default: 0 },
+    isBuiltIn: { type: Boolean, default: false },
+    isActive: { type: Boolean, default: true },
+  },
+  { _id: false }
+)
+
+const formDefinitionSchema = new Schema<IFormDefinition>(
+  {
+    slug: { type: String, required: true, unique: true, trim: true, lowercase: true },
+    name: { type: String, required: true, trim: true },
+    description: { type: String, default: "" },
+    kind: { type: String, enum: ["registration", "standalone"], default: "standalone" },
+    collectionName: { type: String, default: "" },
+    isPublished: { type: Boolean, default: false },
+    submitButtonLabel: { type: String, default: "Submit" },
+    successMessage: { type: String, default: "Thank you — we have your answers." },
+    notifyEmails: { type: [String], default: [] },
+    steps: { type: [formStepSchema], default: [] },
+    submissionCount: { type: Number, default: 0 },
+    createdByUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+  },
+  { timestamps: true }
+)
+
+export const FormDefinitionModel = model<IFormDefinition>("FormDefinition", formDefinitionSchema)

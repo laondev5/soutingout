@@ -1,4 +1,3 @@
-import Link from "next/link"
 import { requireRole } from "@/lib/permissions"
 import { listPastoralDelegates, pastoralCounts } from "@/lib/pastoral"
 import { PastoralList } from "@/components/pastor/PastoralList"
@@ -6,7 +5,6 @@ import { Pagination } from "@/components/dashboard/Pagination"
 import { readPageSize } from "@/lib/list-params"
 import { ViewToggle } from "@/components/dashboard/ViewToggle"
 import { readView } from "@/lib/list-params"
-import { buttonVariants } from "@/components/ui/button"
 
 export const dynamic = "force-dynamic"
 

@@ -6,11 +6,12 @@ import { getDelegateInScope } from "@/lib/delegates"
 import { listAccommodationOptions } from "@/lib/accommodation"
 import { connectDB } from "@/lib/mongoose"
 import { AccommodationModel, AssignmentModel, PaymentModel, UserModel } from "@/lib/db-models"
-import { formatNaira } from "@/lib/constants"
+import { formatNaira, type AdditionalServiceId } from "@/lib/constants"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge, PaymentStatusBadge } from "@/components/dashboard/StatusBadge"
 import { DelegatePanel } from "@/components/dashboard/DelegatePanel"
+import { DelegateDetailsCard } from "@/components/dashboard/DelegateDetailsCard"
 
 export default async function DelegateDetailPage({
   params,
@@ -81,83 +82,40 @@ export default async function DelegateDetailPage({
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Registration</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-                <Detail label="Email">{delegate.email}</Detail>
-                <Detail label="Phone">{delegate.phoneNumber}</Detail>
-                <Detail label="WhatsApp">{delegate.whatsappNumber}</Detail>
-                <Detail label="Gender">{delegate.gender ?? "—"}</Detail>
-                <Detail label="Coming with">{delegate.comingWith}</Detail>
-                <Detail label="Accommodation">{accommodation?.name ?? "—"}</Detail>
-                <Detail label="Registered">
-                  {new Date(delegate.createdAt).toLocaleDateString("en-NG", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })}
-                </Detail>
-                <Detail label="Source">
-                  {delegate.source === "google_sheet_import" ? "Google Sheet import" : "Registration form"}
-                </Detail>
-              </dl>
-
-              {delegate.additionalServices.length > 0 ? (
-                <div className="mt-5">
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                    Additional services
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {delegate.additionalServices.map((service) => (
-                      <Badge key={service} variant="secondary">
-                        {service === "aide" ? "Aide / assistant" : "Unlimited internet"}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {delegate.comments ? (
-                <div className="mt-5">
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground">Comments</p>
-                  <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed">
-                    {delegate.comments}
-                  </p>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          {delegate.companions.length > 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Coming with ({delegate.companions.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="divide-y">
-                  {delegate.companions.map((companion, index) => (
-                    <li key={index} className="py-3 first:pt-0 last:pb-0">
-                      <p className="text-sm font-medium">{companion.fullName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {companion.kind === "spouse"
-                          ? "Spouse"
-                          : companion.kind === "friend_sibling"
-                            ? "Friend / sibling"
-                            : "Family member"}
-                        {companion.gender ? ` · ${companion.gender}` : ""}
-                        {companion.phone ? ` · ${companion.phone}` : ""}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          ) : null}
+          <DelegateDetailsCard
+            delegateId={String(delegate._id)}
+            canEdit={can(user, "delegates.edit")}
+            isCancelled={delegate.registrationStatus === "cancelled"}
+            accommodationName={accommodation?.name ?? "—"}
+            registeredOn={new Date(delegate.createdAt).toLocaleDateString("en-NG", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })}
+            source={
+              delegate.source === "google_sheet_import"
+                ? "Google Sheet import"
+                : delegate.source === "manual"
+                  ? "Added by an admin"
+                  : "Registration form"
+            }
+            delegate={{
+              fullName: delegate.fullName,
+              email: delegate.email,
+              phoneNumber: delegate.phoneNumber,
+              whatsappNumber: delegate.whatsappNumber,
+              gender: delegate.gender ?? null,
+              comingWith: delegate.comingWith,
+              comments: delegate.comments ?? "",
+              additionalServices: delegate.additionalServices as AdditionalServiceId[],
+              companions: delegate.companions.map((companion) => ({
+                fullName: companion.fullName,
+                phone: companion.phone ?? "",
+                whatsapp: companion.whatsapp ?? "",
+                gender: companion.gender ?? null,
+              })),
+            }}
+          />
 
           <Card>
             <CardHeader>
@@ -282,11 +240,3 @@ export default async function DelegateDetailPage({
   )
 }
 
-function Detail({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="text-xs uppercase tracking-wider text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 text-sm">{children}</dd>
-    </div>
-  )
-}

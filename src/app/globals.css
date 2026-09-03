@@ -176,3 +176,31 @@
     @apply font-sans;
   }
 }
+
+/* ── Page builder ──────────────────────────────────────────────────
+   Built pages size themselves against this wrapper rather than the browser
+   window, so the editor's phone preview lays out exactly like a phone.
+   Everything a section emits is a container query against `cms-canvas`. */
+.cms-canvas {
+  container-type: inline-size;
+}
+
+/* A section can force its text light or dark when it sits on a photo or a
+   strong colour that the theme knows nothing about. */
+.cms-tone-light,
+.cms-tone-light .text-muted-foreground {
+  color: oklch(0.98 0.01 150);
+}
+
+.cms-tone-light .text-muted-foreground {
+  opacity: 0.8;
+}
+
+.cms-tone-dark,
+.cms-tone-dark .text-muted-foreground {
+  color: oklch(0.2 0.02 155);
+}
+
+.cms-tone-dark .text-muted-foreground {
+  opacity: 0.75;
+}

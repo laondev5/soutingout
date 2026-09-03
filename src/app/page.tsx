@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react"
 import { buttonVariants } from "@/components/ui/button"
 import { Logo } from "@/components/Logo"
 import { WhatsAppButton } from "@/components/WhatsAppButton"
-import { BlockRenderer } from "@/components/cms/BlockRenderer"
+import { SectionRenderer } from "@/components/cms/SectionRenderer"
 import { getSections } from "@/lib/cms"
 import { listAccommodationOptions } from "@/lib/accommodation"
 
@@ -28,7 +28,7 @@ export default async function HomePage() {
   }))
 
   return (
-    <main className="flex-1">
+    <main className="flex-1 cms-canvas">
       <section className="border-b border-emerald-900 bg-emerald-950 text-emerald-50">
         <div className="mx-auto w-full max-w-3xl px-6 py-20">
           <Logo width={72} onDark priority />
@@ -36,10 +36,11 @@ export default async function HomePage() {
             Registration is open
           </p>
 
-          <BlockRenderer
-            blocks={content["home.hero"] ?? []}
+          <SectionRenderer
+            sections={content["home.hero"] ?? []}
             context={{ onDark: true, pricing }}
-            className="mt-4 space-y-5"
+            className="mt-4"
+            asCanvas={false}
           />
 
           {/* The two calls to action stay in code: they are navigation, not
@@ -64,7 +65,7 @@ export default async function HomePage() {
       </section>
 
       <section className="mx-auto w-full max-w-3xl px-6 py-14">
-        <BlockRenderer blocks={content["home.body"] ?? []} context={{ pricing }} className="space-y-5" />
+        <SectionRenderer sections={content["home.body"] ?? []} context={{ pricing }} asCanvas={false} />
 
         <div className="mt-10">
           <Link href="/register" className={buttonVariants({ size: "lg" })}>

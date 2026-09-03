@@ -1,5 +1,7 @@
 "use client"
 
+import Link from "next/link"
+
 import { useEffect, useMemo, useState } from "react"
 import { useForm, Controller, type Resolver } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -36,9 +38,10 @@ import {
 } from "@/lib/registration-schema"
 import { submitRegistration } from "@/actions/registration.actions"
 import { initializePayment } from "@/actions/payment.actions"
-import { BlockRenderer, type PricingRow } from "@/components/cms/BlockRenderer"
+import { type PricingRow } from "@/components/cms/BlockRenderer"
+import { SectionRenderer } from "@/components/cms/SectionRenderer"
 import { CustomFieldInputs, type CustomAnswers } from "@/components/registration/CustomFieldInputs"
-import type { Block } from "@/lib/cms-blocks"
+import type { Section } from "@/lib/cms-blocks"
 import type { FormFieldConfig } from "@/lib/form-fields"
 
 const DRAFT_KEY = `lff-registration-draft:${EVENT.tag}`
@@ -100,7 +103,7 @@ export function RegistrationStepper({
   /** Whether online checkout can be offered at all. */
   paystackEnabled: boolean
   /** CMS blocks per section slug — the editable copy on each step. */
-  content: Record<string, Block[]>
+  content: Record<string, Section[]>
   /** Super-admin-defined questions, grouped by the step they belong to. */
   customFields: Record<string, FormFieldConfig[]>
 }) {
@@ -295,10 +298,10 @@ export function RegistrationStepper({
       <form onSubmit={onSubmit} noValidate>
         <div className="space-y-6">
           {step === "welcome" ? (
-            <BlockRenderer blocks={content["register.welcome"] ?? []} context={{ pricing: pricingRows }} />
+            <SectionRenderer sections={content["register.welcome"] ?? []} context={{ pricing: pricingRows }} asCanvas={false} />
           ) : null}
           {step === "fees" ? (
-            <BlockRenderer blocks={content["register.fees"] ?? []} context={{ pricing: pricingRows }} />
+            <SectionRenderer sections={content["register.fees"] ?? []} context={{ pricing: pricingRows }} asCanvas={false} />
           ) : null}
           {step === "personal" ? <PersonalStep form={form} /> : null}
           {step === "comingWith" ? <ComingWithStep form={form} /> : null}
@@ -377,87 +380,8 @@ export function RegistrationStepper({
 
 type StepForm = { form: ReturnType<typeof useForm<RegistrationInput>> }
 
-function Prose({ children }: { children: React.ReactNode }) {
-  return <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">{children}</div>
-}
 
-function WelcomeStep() {
-  return (
-    <Prose>
-      <p className="text-base text-foreground">
-        Welcome to the official registration and accommodation booking portal for the{" "}
-        <strong>{EVENT.shortName}</strong> — a life-transforming spiritual encounter you don’t
-        want to miss.
-      </p>
 
-      <dl className="grid gap-3 rounded-lg border bg-muted/40 p-4 sm:grid-cols-2">
-        <Fact label="Date">{EVENT.dateLabel}</Fact>
-        <Fact label="Venue">{EVENT.venue}</Fact>
-        <Fact label="Host">{EVENT.host}</Fact>
-        <Fact label="Starts">{EVENT.startTimeLabel}</Fact>
-      </dl>
-
-      <div>
-        <h2 className="font-semibold text-foreground">Arrival and departure</h2>
-        <p className="mt-1">
-          Participants travelling from distant locations may arrive from Friday, 2nd October
-          2026. The retreat concludes on Sunday, 4th October 2026.
-        </p>
-      </div>
-
-      <div>
-        <h2 className="font-semibold text-foreground">Who can register?</h2>
-        <p className="mt-1">
-          Everyone is welcome — whether it is your first time or you have attended before. Come
-          expecting divine encounters and lasting transformation.
-        </p>
-      </div>
-
-      <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900">
-        Fill each section carefully and submit only once. Once submitted, our team receives your
-        details for processing.
-      </p>
-    </Prose>
-  )
-}
-
-function FeesStep({ accommodations }: { accommodations: AccommodationOption[] }) {
-  return (
-    <Prose>
-      <p>
-        Below are the {EVENT.shortName} costs based on the accommodation chosen. Any of these
-        costs covers registration, feeding and accommodation for each participant.
-      </p>
-
-      <ul className="divide-y rounded-lg border">
-        {accommodations.map((option) => (
-          <li key={option.id} className="flex items-center justify-between gap-4 p-3.5">
-            <span className="text-sm font-medium text-foreground">{option.name}</span>
-            <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
-              {option.isFree ? "Free" : formatNaira(option.pricePerPerson)}
-              {option.pricingMode === "per_person" && !option.isFree ? (
-                <span className="font-normal text-muted-foreground"> each</span>
-              ) : null}
-            </span>
-          </li>
-        ))}
-      </ul>
-
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900">
-        <p className="font-semibold">Payment &amp; accommodation notice</p>
-        <p className="mt-1">
-          Accommodation reservations are confirmed strictly based on payment proof, and
-          allocation is on a first-pay, first-serve basis.
-        </p>
-        <p className="mt-2">
-          If you are attending with your spouse and staying in hostel or private accommodation,
-          each individual must pay their own {formatNaira(35_000)} fee — shared accommodation
-          does not reduce the cost per person.
-        </p>
-      </div>
-    </Prose>
-  )
-}
 
 function PersonalStep({ form }: StepForm) {
   const { register, formState, control } = form
@@ -719,10 +643,10 @@ function AccommodationStep({
   )
 }
 
-function FeedingStep({ form, content }: StepForm & { content: Block[] }) {
+function FeedingStep({ form, content }: StepForm & { content: Section[] }) {
   return (
     <>
-      <BlockRenderer blocks={content} />
+      <SectionRenderer sections={content} asCanvas={false} />
 
       <Field label="Comments if any" htmlFor="comments" error={form.formState.errors.comments?.message}>
         <Textarea id="comments" rows={4} {...form.register("comments")} />
@@ -886,14 +810,6 @@ function PaymentStep({
 
 // ── Bits ─────────────────────────────────────────────────────────────
 
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="text-xs uppercase tracking-wider text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 text-sm font-medium text-foreground">{children}</dd>
-    </div>
-  )
-}
 
 /** A selectable payment method, styled like the accommodation options. */
 function PayOption({
@@ -1017,9 +933,9 @@ function SubmittedPanel({
           </Button>
         ) : null}
 
-        <a href="/status" className={buttonVariants({ size: "lg", variant: "outline" })}>
+        <Link href="/status" className={buttonVariants({ size: "lg", variant: "outline" })}>
           Upload proof of payment
-        </a>
+        </Link>
       </div>
     </div>
   )

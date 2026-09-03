@@ -3,25 +3,21 @@
 import { revalidatePath } from "next/cache"
 import mongoose from "mongoose"
 import { z } from "zod"
-import { FormFieldModel } from "@/lib/db-models"
+import { FormDefinitionModel, FormFieldModel } from "@/lib/db-models"
 import { connectDB } from "@/lib/mongoose"
 import { requireSuperAdmin } from "@/lib/permissions"
 import { invalidateFormFields, validateFieldShape } from "@/lib/form-config"
+import { invalidateForms } from "@/lib/forms"
 import { logActivity } from "@/lib/activity-log"
-import {
-  FIELD_TYPES,
-  FORM_STEP_IDS,
-  RESERVED_KEYS,
-  keyFromLabel,
-  type FieldType,
-} from "@/lib/form-fields"
+import { FIELD_TYPES, RESERVED_KEYS, keyFromLabel, type FieldType } from "@/lib/form-fields"
 
 type ActionResult<T = object> = ({ ok: true } & T) | { ok: false; error: string }
 
 const fieldSchema = z.object({
+  formId: z.string().min(1, "Unknown form."),
   label: z.string().trim().min(1, "Give the field a label.").max(160),
   type: z.enum(FIELD_TYPES),
-  step: z.string().refine((value) => FORM_STEP_IDS.includes(value as never), "Unknown step."),
+  step: z.string().trim().min(1, "Unknown step.").max(80),
   required: z.boolean().default(false),
   placeholder: z.string().trim().max(160).default(""),
   helpText: z.string().trim().max(400).default(""),
@@ -32,10 +28,31 @@ function cleanOptions(options: string[]) {
   return [...new Set(options.map((option) => option.trim()).filter(Boolean))]
 }
 
-function refreshPublic() {
+function refreshPublic(slug?: string) {
   invalidateFormFields()
+  invalidateForms()
   revalidatePath("/register")
   revalidatePath("/dashboard/form-builder")
+  if (slug) revalidatePath(`/forms/${slug}`)
+}
+
+/**
+ * The form a field is being filed under, and the step within it.
+ *
+ * Step ids are per-form now, so "does this step exist" can only be answered by
+ * reading the form — a stale browser tab must not be able to file a question
+ * under a step that was deleted.
+ */
+async function resolveTarget(formId: string, stepId: string) {
+  if (!mongoose.Types.ObjectId.isValid(formId)) return null
+
+  const form = await FormDefinitionModel.findById(formId).select("slug steps kind")
+  if (!form) return null
+
+  const step = form.steps.find((entry) => entry.id === stepId)
+  if (!step) return null
+
+  return { form, step }
 }
 
 export async function createFormField(
@@ -55,22 +72,30 @@ export async function createFormField(
 
   await connectDB()
 
-  // The key is derived from the label, then made unique. It is what the answer
-  // is stored under, so it must never collide with a real Delegate column.
+  const target = await resolveTarget(values.formId, values.step)
+  if (!target) return { ok: false, error: "That form or step could not be found." }
+
+  // The key is derived from the label, then made unique within this form. It
+  // is what the answer is stored under, so on the registration form it must
+  // never collide with a real Delegate column.
   const base = keyFromLabel(values.label)
-  let key = RESERVED_KEYS.has(base) ? `custom_${base}` : base
+  let key =
+    target.form.kind === "registration" && RESERVED_KEYS.has(base) ? `custom_${base}` : base
   let suffix = 2
 
-  while (await FormFieldModel.exists({ key })) {
+  while (await FormFieldModel.exists({ formId: target.form._id, key })) {
     key = `${base}_${suffix}`
     suffix += 1
     if (suffix > 50) return { ok: false, error: "Could not find a free key for that label." }
   }
 
-  const last = await FormFieldModel.findOne({ step: values.step }).sort({ order: -1 }).select("order")
+  const last = await FormFieldModel.findOne({ formId: target.form._id, step: values.step })
+    .sort({ order: -1 })
+    .select("order")
 
   const created = await FormFieldModel.create({
     ...values,
+    formId: target.form._id,
     key,
     order: (last?.order ?? 0) + 10,
     isActive: true,
@@ -86,7 +111,7 @@ export async function createFormField(
     details: { key, label: values.label, step: values.step, type: values.type },
   })
 
-  refreshPublic()
+  refreshPublic(target.form.slug)
   return { ok: true, id: String(created._id) }
 }
 
@@ -137,7 +162,14 @@ export async function updateFormField(
     })
     if (shapeError) return { ok: false, error: shapeError }
 
-    field.set(values)
+    const target = await resolveTarget(String(field.formId ?? values.formId), values.step)
+    if (!target) return { ok: false, error: "That step could not be found." }
+
+    // `formId` is not editable here: moving a question between forms would
+    // orphan the answers already given to it.
+    const { formId: _formId, ...editable } = values
+    void _formId
+    field.set(editable)
   }
 
   await field.save()
@@ -229,14 +261,11 @@ export async function deleteFormField(input: { id: string }): Promise<ActionResu
 
 /** Persist a drag-and-drop reorder within a step. */
 export async function reorderFormFields(input: {
+  formId: string
   step: string
   ids: string[]
 }): Promise<ActionResult> {
   await requireSuperAdmin()
-
-  if (!FORM_STEP_IDS.includes(input.step as never)) {
-    return { ok: false, error: "Unknown step." }
-  }
 
   if (input.ids.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
     return { ok: false, error: "That ordering could not be saved." }
@@ -244,13 +273,20 @@ export async function reorderFormFields(input: {
 
   await connectDB()
 
+  const target = await resolveTarget(input.formId, input.step)
+  if (!target) return { ok: false, error: "That form or step could not be found." }
+
   await FormFieldModel.bulkWrite(
     input.ids.map((id, index) => ({
-      // Scoped to the step so a tampered id from another step cannot be moved.
-      updateOne: { filter: { _id: id, step: input.step }, update: { $set: { order: (index + 1) * 10 } } },
+      // Scoped to the form and step, so a tampered id from somewhere else
+      // cannot be moved.
+      updateOne: {
+        filter: { _id: id, formId: target.form._id, step: input.step },
+        update: { $set: { order: (index + 1) * 10 } },
+      },
     }))
   )
 
-  refreshPublic()
+  refreshPublic(target.form.slug)
   return { ok: true }
 }

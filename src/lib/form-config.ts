@@ -1,7 +1,7 @@
 import "server-only"
 import { unstable_cache, updateTag } from "next/cache"
 import { z } from "zod"
-import { FormFieldModel } from "@/lib/db-models"
+import { FormDefinitionModel, FormFieldModel } from "@/lib/db-models"
 import { connectDB } from "@/lib/mongoose"
 import {
   BUILT_IN_FIELDS,
@@ -13,7 +13,7 @@ import {
 
 const CACHE_TAG = "form-fields"
 
-function toConfig(doc: {
+export function toFieldConfig(doc: {
   _id: unknown
   key: string
   label: string
@@ -53,9 +53,14 @@ function toConfig(doc: {
 export async function ensureBuiltInFields() {
   await connectDB()
 
+  const form = await FormDefinitionModel.findOne({ kind: "registration" }).select("_id").lean()
+
   const existing = await FormFieldModel.find({ isBuiltIn: true }).select("key").lean()
   const have = new Set(existing.map((row) => row.key))
-  const missing = BUILT_IN_FIELDS.filter((field) => !have.has(field.key))
+  const missing = BUILT_IN_FIELDS.filter((field) => !have.has(field.key)).map((field) => ({
+    ...field,
+    formId: form?._id ?? null,
+  }))
 
   if (missing.length > 0) {
     await FormFieldModel.insertMany(missing, { ordered: false }).catch(() => {
@@ -65,12 +70,26 @@ export async function ensureBuiltInFields() {
   }
 }
 
+/**
+ * Fields belonging to the registration form.
+ *
+ * Now that the app has more than one form, this must not pick up a standalone
+ * form's fields. Rows written before forms had identity have `formId: null`
+ * and are still the registration form's, so both are matched — `forms.ts`
+ * stamps them on its first run.
+ */
 async function loadFields(): Promise<FormFieldConfig[]> {
   await connectDB()
   await ensureBuiltInFields()
 
-  const rows = await FormFieldModel.find({}).sort({ step: 1, order: 1 }).lean()
-  return rows.map(toConfig)
+  const form = await FormDefinitionModel.findOne({ kind: "registration" }).select("_id").lean()
+
+  const filter = form
+    ? { $or: [{ formId: form._id }, { formId: null }] }
+    : { formId: null }
+
+  const rows = await FormFieldModel.find(filter).sort({ step: 1, order: 1 }).lean()
+  return rows.map(toFieldConfig)
 }
 
 /** All fields, cached; the registration page reads this on every render. */

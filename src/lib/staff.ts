@@ -1,6 +1,7 @@
 import "server-only"
 import { DelegateModel, UserModel } from "@/lib/db-models"
 import { connectDB } from "@/lib/mongoose"
+import type { Permission } from "@/lib/constants"
 import type { StaffRow } from "@/components/dashboard/StaffManager"
 
 /** Staff of one role, with their current open delegate load. */
@@ -29,7 +30,9 @@ export async function listStaff(role: "sub_admin" | "pastor"): Promise<StaffRow[
     id: String(user._id),
     name: user.name,
     email: user.email,
-    phone: user.phone,
+    phone: user.phone ?? "",
+    role: user.role === "pastor" ? "pastor" : "sub_admin",
+    permissions: (user.permissions ?? []) as Permission[],
     isActive: user.isActive,
     maxDelegates: user.maxDelegates ?? 0,
     delegateCount: loadByUser.get(String(user._id)) ?? 0,

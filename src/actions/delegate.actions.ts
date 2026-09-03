@@ -8,6 +8,7 @@ import {
   DelegateModel,
   PastoralSessionModel,
   PaymentModel,
+  type ICompanion,
 } from "@/lib/db-models"
 import { connectDB } from "@/lib/mongoose"
 import { can, canAccessDelegate, requireUser } from "@/lib/permissions"
@@ -17,7 +18,17 @@ import { bedsAvailableFor } from "@/lib/accommodation"
 import { quote } from "@/lib/pricing"
 import { generateReference } from "@/lib/paystack"
 import { logActivity } from "@/lib/activity-log"
-import type { AdditionalServiceId, PastoralStatus } from "@/lib/constants"
+import {
+  ADDITIONAL_SERVICES,
+  COMING_WITH_OPTIONS,
+  GENDERS,
+  companionStepFor,
+  familyMemberCount,
+  type AdditionalServiceId,
+  type ComingWith,
+  type Gender,
+  type PastoralStatus,
+} from "@/lib/constants"
 
 type ActionResult<T = object> = ({ ok: true } & T) | { ok: false; error: string }
 
@@ -41,6 +52,285 @@ async function loadInScope(delegateId: string) {
   }
 
   return { ok: true as const, user, delegate }
+}
+
+// ── Details ──────────────────────────────────────────────────────────
+
+export type CompanionInput = {
+  fullName: string
+  phone?: string
+  whatsapp?: string
+  gender?: Gender | null
+}
+
+/** How many companions a "coming with" answer expects, and what to call them. */
+function companionShapeFor(comingWith: ComingWith) {
+  const step = companionStepFor(comingWith)
+
+  if (step === "partner") {
+    return {
+      count: 1,
+      kind: (comingWith === "My spouse" ? "spouse" : "friend_sibling") as ICompanion["kind"],
+      label: comingWith === "My spouse" ? "your spouse" : "your friend or sibling",
+    }
+  }
+
+  if (step === "family") {
+    return {
+      count: familyMemberCount(comingWith),
+      kind: "family_member" as ICompanion["kind"],
+      label: "family member",
+    }
+  }
+
+  return { count: 0, kind: "family_member" as ICompanion["kind"], label: "" }
+}
+
+/**
+ * Edit a delegate's own details.
+ *
+ * Only the fields present in `input` are touched, so the same action serves a
+ * one-word typo fix and a full rewrite. Two of those fields move money:
+ * `comingWith` changes the party size and `additionalServices` changes the
+ * extras, so either one re-runs the quote, re-checks the beds and rewrites the
+ * booking — the same path `changeAccommodation` takes. What is already paid is
+ * never touched; the balance simply moves.
+ */
+export async function updateDelegate(input: {
+  delegateId: string
+  fullName?: string
+  email?: string
+  phoneNumber?: string
+  whatsappNumber?: string
+  gender?: Gender | null
+  comingWith?: ComingWith
+  companions?: CompanionInput[]
+  comments?: string
+  additionalServices?: AdditionalServiceId[]
+}): Promise<ActionResult<{ totalDue: number }>> {
+  const scoped = await loadInScope(input.delegateId)
+  if (!scoped.ok) return { ok: false, error: scoped.error }
+
+  const { user, delegate } = scoped
+
+  if (!can(user, "delegates.edit")) {
+    return { ok: false, error: "You do not have permission to edit delegates." }
+  }
+
+  if (delegate.registrationStatus === "cancelled") {
+    return { ok: false, error: "This registration is cancelled and can no longer be edited." }
+  }
+
+  const changed: Record<string, unknown> = {}
+
+  // ── Plain fields ───────────────────────────────────────────────────
+
+  if (input.fullName !== undefined) {
+    const fullName = input.fullName.trim()
+    if (!fullName) return { ok: false, error: "Enter the delegate's full name." }
+    if (fullName !== delegate.fullName) changed.fullName = fullName
+    delegate.fullName = fullName
+  }
+
+  if (input.email !== undefined) {
+    const email = input.email.trim().toLowerCase()
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return { ok: false, error: "Enter a valid email address." }
+    }
+    // The status page looks a delegate up by LFF ID and email, so a duplicate
+    // would make two registrations answer to the same lookup.
+    if (email !== delegate.email) {
+      const clash = await DelegateModel.exists({
+        email,
+        _id: { $ne: delegate._id },
+        registrationStatus: { $ne: "cancelled" },
+      })
+      if (clash) {
+        return { ok: false, error: "Another delegate is registered with that email address." }
+      }
+      changed.email = email
+      delegate.email = email
+    }
+  }
+
+  if (input.phoneNumber !== undefined) {
+    const phoneNumber = input.phoneNumber.trim()
+    if (!phoneNumber) return { ok: false, error: "Enter a phone number." }
+    if (phoneNumber !== delegate.phoneNumber) changed.phoneNumber = phoneNumber
+    delegate.phoneNumber = phoneNumber
+  }
+
+  if (input.whatsappNumber !== undefined) {
+    const whatsappNumber = input.whatsappNumber.trim()
+    if (!whatsappNumber) return { ok: false, error: "Enter a WhatsApp number." }
+    if (whatsappNumber !== delegate.whatsappNumber) changed.whatsappNumber = whatsappNumber
+    delegate.whatsappNumber = whatsappNumber
+  }
+
+  if (input.gender !== undefined) {
+    if (input.gender && !(GENDERS as readonly string[]).includes(input.gender)) {
+      return { ok: false, error: "Choose a valid gender." }
+    }
+    if (input.gender !== (delegate.gender ?? null)) changed.gender = input.gender
+    delegate.gender = input.gender ?? undefined
+  }
+
+  if (input.comments !== undefined) {
+    const comments = input.comments.trim()
+    if (comments !== delegate.comments) changed.comments = comments
+    delegate.comments = comments
+  }
+
+  // ── Party and services (these reprice) ─────────────────────────────
+
+  const previousComingWith = delegate.comingWith
+
+  if (input.comingWith !== undefined) {
+    if (!(COMING_WITH_OPTIONS as readonly string[]).includes(input.comingWith)) {
+      return { ok: false, error: "Choose a valid answer for who they are coming with." }
+    }
+    if (input.comingWith !== delegate.comingWith) changed.comingWith = input.comingWith
+    delegate.comingWith = input.comingWith
+  }
+
+  if (input.additionalServices !== undefined) {
+    const allowed = ADDITIONAL_SERVICES.map((service) => service.id) as readonly string[]
+    const services = [...new Set(input.additionalServices)].filter((id) => allowed.includes(id))
+    if (services.join(",") !== [...delegate.additionalServices].join(",")) {
+      changed.additionalServices = services
+    }
+    delegate.additionalServices = services
+  }
+
+  if (input.companions !== undefined) {
+    const shape = companionShapeFor(delegate.comingWith)
+
+    const named = input.companions
+      .map((companion) => ({
+        kind: shape.kind,
+        fullName: (companion.fullName ?? "").trim(),
+        phone: (companion.phone ?? "").trim(),
+        whatsapp: (companion.whatsapp ?? "").trim(),
+        gender: companion.gender ?? undefined,
+      }))
+      .slice(0, shape.count)
+      .filter((companion) => companion.fullName.length > 0)
+
+    // Only insist on complete names when the answer itself changed. An older
+    // record imported from the Sheet may have none, and blocking a typo fix on
+    // the email address because of that would be perverse.
+    if (changed.comingWith && named.length < shape.count) {
+      return {
+        ok: false,
+        error:
+          shape.count === 1
+            ? `Enter the name of ${shape.label}.`
+            : `Enter the names of all ${shape.count} family members.`,
+      }
+    }
+
+    // The form posts the companion rows on every save, so compare before
+    // marking a change — otherwise a no-op edit still writes an audit entry.
+    const before = delegate.companions.map(
+      (c) => `${c.fullName}|${c.phone ?? ""}|${c.whatsapp ?? ""}|${c.gender ?? ""}`
+    )
+    const after = named.map(
+      (c) => `${c.fullName}|${c.phone}|${c.whatsapp}|${c.gender ?? ""}`
+    )
+
+    if (before.join("~") !== after.join("~")) {
+      changed.companions = named.length
+      delegate.companions = named
+    }
+  }
+
+  // ── Reprice ────────────────────────────────────────────────────────
+
+  const repriced = Boolean(changed.comingWith) || Boolean(changed.additionalServices)
+
+  if (repriced) {
+    const accommodation = delegate.accommodationId
+      ? await AccommodationModel.findById(delegate.accommodationId)
+      : null
+
+    const priced = quote({
+      accommodation: accommodation
+        ? {
+            name: accommodation.name,
+            pricePerPerson: accommodation.pricePerPerson,
+            pricingMode: accommodation.pricingMode,
+            capacityPerUnit: accommodation.capacityPerUnit,
+            isFree: accommodation.isFree,
+          }
+        : null,
+      comingWith: delegate.comingWith,
+      additionalServices: delegate.additionalServices as AdditionalServiceId[],
+    })
+
+    const booking = await BookingModel.findOne({
+      delegateId: delegate._id,
+      status: { $in: ["held", "confirmed"] },
+    })
+
+    if (accommodation && booking && priced.bedsRequired !== booking.beds) {
+      const extra = priced.bedsRequired - booking.beds
+
+      if (extra > 0) {
+        // This delegate's own beds are already counted as taken, so the room
+        // to check for is only the difference.
+        const available = await bedsAvailableFor(accommodation._id)
+        if (available < extra) {
+          return {
+            ok: false,
+            error: `${accommodation.name} only has ${available} bed${available === 1 ? "" : "s"} left — not enough for a party of ${priced.partySize}.`,
+          }
+        }
+      }
+
+      // Held bookings are not in `bedsReserved` yet, so only a confirmed one
+      // moves the counter.
+      if (booking.status === "confirmed") {
+        await AccommodationModel.updateOne(
+          { _id: accommodation._id },
+          { $inc: { bedsReserved: extra } }
+        )
+      }
+
+      booking.beds = priced.bedsRequired
+    }
+
+    if (booking) {
+      booking.unitPrice = accommodation?.pricePerPerson ?? 0
+      booking.amount = priced.accommodationTotal
+      await booking.save()
+    }
+
+    if (priced.total !== delegate.totalDue) changed.totalDue = priced.total
+    delegate.totalDue = priced.total
+  }
+
+  if (Object.keys(changed).length === 0) {
+    return { ok: true, totalDue: delegate.totalDue ?? 0 }
+  }
+
+  await delegate.save()
+
+  await logActivity({
+    actorUserId: user.id,
+    action: "delegate.updated",
+    entityType: "delegate",
+    entityId: String(delegate._id),
+    details: {
+      changed,
+      ...(changed.comingWith ? { previousComingWith } : {}),
+    },
+  })
+
+  revalidatePath(`/dashboard/delegates/${input.delegateId}`)
+  revalidatePath("/dashboard/delegates")
+  if (repriced) revalidatePath("/dashboard/accommodations")
+
+  return { ok: true, totalDue: delegate.totalDue ?? 0 }
 }
 
 // ── Assignment ───────────────────────────────────────────────────────
@@ -279,6 +569,80 @@ export async function changeAccommodation(input: {
     ok: true,
     accommodationCode: reissued.reissued ? reissued.accommodationCode : undefined,
   }
+}
+
+/**
+ * Remove a delegate for good.
+ *
+ * Unlike cancelling, which keeps the record and simply stops holding a bed,
+ * this erases the registration — for a duplicate, a test row, or a mistaken
+ * import. Their beds go back on sale and the rows that only exist to describe
+ * them (bookings, payments, pastoral sessions) go with them.
+ *
+ * The activity log keeps its entry, including the name and LFF ID, so a
+ * deletion is still answerable for afterwards.
+ */
+export async function deleteDelegate(input: {
+  delegateId: string
+}): Promise<ActionResult<{ fullName: string }>> {
+  const scoped = await loadInScope(input.delegateId)
+  if (!scoped.ok) return { ok: false, error: scoped.error }
+
+  const { user, delegate } = scoped
+
+  // Deliberately stricter than editing: a sub-admin can correct a delegate but
+  // only a super admin can make one disappear.
+  if (user.role !== "super_admin") {
+    return { ok: false, error: "Only a super admin can delete a delegate." }
+  }
+
+  const booking = await BookingModel.findOne({
+    delegateId: delegate._id,
+    status: { $in: ["held", "confirmed"] },
+  })
+
+  // Only a confirmed booking is counted in `bedsReserved`; a held one was
+  // never added to it.
+  if (booking?.status === "confirmed") {
+    await AccommodationModel.updateOne(
+      { _id: booking.accommodationId },
+      { $inc: { bedsReserved: -booking.beds } }
+    )
+  }
+
+  const [payments, sessions, bookings] = await Promise.all([
+    PaymentModel.deleteMany({ delegateId: delegate._id }),
+    PastoralSessionModel.deleteMany({ delegateId: delegate._id }),
+    BookingModel.deleteMany({ delegateId: delegate._id }),
+  ])
+
+  const fullName = delegate.fullName
+
+  await DelegateModel.deleteOne({ _id: delegate._id })
+
+  await logActivity({
+    actorUserId: user.id,
+    action: "delegate.deleted",
+    entityType: "delegate",
+    entityId: String(delegate._id),
+    details: {
+      fullName,
+      email: delegate.email,
+      lffId: delegate.lffId,
+      totalPaid: delegate.totalPaid ?? 0,
+      removed: {
+        payments: payments.deletedCount,
+        pastoralSessions: sessions.deletedCount,
+        bookings: bookings.deletedCount,
+      },
+    },
+  })
+
+  revalidatePath("/dashboard/delegates")
+  revalidatePath("/dashboard/payments")
+  revalidatePath("/dashboard/accommodations")
+
+  return { ok: true, fullName }
 }
 
 // ── Status ───────────────────────────────────────────────────────────
