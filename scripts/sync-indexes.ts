@@ -10,11 +10,13 @@ import {
   AssignmentModel,
   BookingModel,
   DelegateModel,
+  FormDefinitionModel,
   FormFieldModel,
   ImportBatchModel,
   PastoralSessionModel,
   PaymentModel,
   SiteContentModel,
+  SitePageModel,
   UserModel,
 } from "@/lib/db-models"
 
@@ -29,7 +31,9 @@ const MODELS = [
   ImportBatchModel,
   ActivityLogModel,
   SiteContentModel,
+  SitePageModel,
   FormFieldModel,
+  FormDefinitionModel,
 ]
 
 async function main() {
