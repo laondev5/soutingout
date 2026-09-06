@@ -348,24 +348,20 @@ export function DelegateDetailsCard({
                     ))}
                   </select>
                 </Field>
-                {!slots.numbered ? (
-                  <>
-                    <Field label="Phone" id={`c-phone-${index}`}>
-                      <Input
-                        id={`c-phone-${index}`}
-                        value={companion.phone}
-                        onChange={(event) => setCompanion(index, { phone: event.target.value })}
-                      />
-                    </Field>
-                    <Field label="WhatsApp" id={`c-whatsapp-${index}`}>
-                      <Input
-                        id={`c-whatsapp-${index}`}
-                        value={companion.whatsapp}
-                        onChange={(event) => setCompanion(index, { whatsapp: event.target.value })}
-                      />
-                    </Field>
-                  </>
-                ) : null}
+                <Field label="Phone" id={`c-phone-${index}`}>
+                  <Input
+                    id={`c-phone-${index}`}
+                    value={companion.phone}
+                    onChange={(event) => setCompanion(index, { phone: event.target.value })}
+                  />
+                </Field>
+                <Field label="WhatsApp" id={`c-whatsapp-${index}`}>
+                  <Input
+                    id={`c-whatsapp-${index}`}
+                    value={companion.whatsapp}
+                    onChange={(event) => setCompanion(index, { whatsapp: event.target.value })}
+                  />
+                </Field>
               </div>
             ))}
           </div>

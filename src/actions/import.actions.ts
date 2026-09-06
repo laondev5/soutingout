@@ -7,6 +7,7 @@ import { connectDB } from "@/lib/mongoose"
 import { can, requireUser } from "@/lib/permissions"
 import { assignDelegate, autoAssignNewDelegate } from "@/lib/assignment"
 import { quote } from "@/lib/pricing"
+import { generateStatusToken } from "@/lib/status-token"
 import { logActivity } from "@/lib/activity-log"
 import {
   accommodationMatcher,
@@ -306,6 +307,7 @@ export async function commitImport(input: {
       totalPaid: 0,
       source: "google_sheet_import",
       importBatchId: batchId,
+      statusToken: generateStatusToken(),
     })
 
     await BookingModel.create({

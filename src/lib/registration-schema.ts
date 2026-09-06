@@ -42,10 +42,22 @@ export const registrationSchema = z
     partnerWhatsapp: z.string().trim().optional().or(z.literal("")),
     partnerGender: z.enum(GENDERS).optional(),
 
-    // Family of 3 or 4 — the form collects name and gender in one field
-    familyMember1: z.string().trim().optional().or(z.literal("")),
-    familyMember2: z.string().trim().optional().or(z.literal("")),
-    familyMember3: z.string().trim().optional().or(z.literal("")),
+    // Family of 3 or 4 — one full contact record per member, same shape as
+    // the spouse/friend/sibling branch above.
+    familyMember1FullName: z.string().trim().optional().or(z.literal("")),
+    familyMember1Gender: z.enum(GENDERS).optional(),
+    familyMember1Phone: z.string().trim().optional().or(z.literal("")),
+    familyMember1Whatsapp: z.string().trim().optional().or(z.literal("")),
+
+    familyMember2FullName: z.string().trim().optional().or(z.literal("")),
+    familyMember2Gender: z.enum(GENDERS).optional(),
+    familyMember2Phone: z.string().trim().optional().or(z.literal("")),
+    familyMember2Whatsapp: z.string().trim().optional().or(z.literal("")),
+
+    familyMember3FullName: z.string().trim().optional().or(z.literal("")),
+    familyMember3Gender: z.enum(GENDERS).optional(),
+    familyMember3Phone: z.string().trim().optional().or(z.literal("")),
+    familyMember3Whatsapp: z.string().trim().optional().or(z.literal("")),
 
     accommodationId: z.string().min(1, "Choose your accommodation"),
     comments: z.string().trim().max(2000, "Please keep this under 2000 characters").default(""),
@@ -68,14 +80,23 @@ export const registrationSchema = z
 
     if (branch === "family") {
       const required = familyMemberCount(value.comingWith)
-      const fields = ["familyMember1", "familyMember2", "familyMember3"] as const
+      const fullNameFields = ["familyMember1FullName", "familyMember2FullName", "familyMember3FullName"] as const
+      const genderFields = ["familyMember1Gender", "familyMember2Gender", "familyMember3Gender"] as const
 
       for (let index = 0; index < required; index += 1) {
-        if (!value[fields[index]]) {
+        if (!value[fullNameFields[index]]) {
           ctx.addIssue({
             code: "custom",
-            path: [fields[index]],
-            message: `Enter the full name and gender of family member ${index + 1}`,
+            path: [fullNameFields[index]],
+            message: `Enter the full name of family member ${index + 1}`,
+          })
+        }
+
+        if (!value[genderFields[index]]) {
+          ctx.addIssue({
+            code: "custom",
+            path: [genderFields[index]],
+            message: `Choose the gender of family member ${index + 1}`,
           })
         }
       }
@@ -93,7 +114,20 @@ export const STEP_FIELDS = {
   personal: ["fullName", "whatsappNumber", "phoneNumber", "email", "gender"],
   comingWith: ["comingWith"],
   partner: ["partnerFullName", "partnerPhone", "partnerWhatsapp", "partnerGender"],
-  family: ["familyMember1", "familyMember2", "familyMember3"],
+  family: [
+    "familyMember1FullName",
+    "familyMember1Gender",
+    "familyMember1Phone",
+    "familyMember1Whatsapp",
+    "familyMember2FullName",
+    "familyMember2Gender",
+    "familyMember2Phone",
+    "familyMember2Whatsapp",
+    "familyMember3FullName",
+    "familyMember3Gender",
+    "familyMember3Phone",
+    "familyMember3Whatsapp",
+  ],
   accommodation: ["accommodationId"],
   feeding: ["comments"],
   services: ["additionalServices"],

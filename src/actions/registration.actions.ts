@@ -4,7 +4,7 @@ import { AccommodationModel, BookingModel, DelegateModel } from "@/lib/db-models
 import { connectDB } from "@/lib/mongoose"
 import { registrationSchema, type RegistrationInput } from "@/lib/registration-schema"
 import { bedsAvailableFor } from "@/lib/accommodation"
-import { quote } from "@/lib/pricing"
+import { fitsParty, quote } from "@/lib/pricing"
 import { autoAssignNewDelegate } from "@/lib/assignment"
 import { trySendEmail } from "@/lib/email"
 import { registrationReceivedEmail } from "@/lib/email-templates"
@@ -12,6 +12,7 @@ import { logActivity } from "@/lib/activity-log"
 import { publishDashboardEvent } from "@/lib/pusher"
 import { companionStepFor, familyMemberCount, type AdditionalServiceId } from "@/lib/constants"
 import { customFieldsSchema, getActiveFormFields } from "@/lib/form-config"
+import { generateStatusToken } from "@/lib/status-token"
 
 export type RegistrationResult =
   | {
@@ -19,6 +20,8 @@ export type RegistrationResult =
       delegateId: string
       totalDue: number
       accommodationName: string
+      /** Opens this delegate's own status page with no email/LFF ID typing. */
+      statusToken: string
     }
   | {
       ok: false
@@ -69,18 +72,30 @@ export async function submitRegistration(
     return { ok: false, error: "That accommodation is no longer available. Please pick another." }
   }
 
+  const accommodationShape = {
+    name: accommodation.name,
+    pricePerPerson: accommodation.pricePerPerson,
+    pricingMode: (accommodation.pricingMode ?? "per_person") as "per_person" | "flat",
+    capacityPerUnit: accommodation.capacityPerUnit ?? 1,
+    isFree: accommodation.isFree ?? false,
+  }
+
   // Recompute server-side — never trust a total that came from the browser.
   const priced = quote({
-    accommodation: {
-      name: accommodation.name,
-      pricePerPerson: accommodation.pricePerPerson,
-      pricingMode: (accommodation.pricingMode ?? "per_person") as "per_person" | "flat",
-      capacityPerUnit: accommodation.capacityPerUnit ?? 1,
-      isFree: accommodation.isFree ?? false,
-    },
+    accommodation: accommodationShape,
     comingWith: values.comingWith,
     additionalServices: values.additionalServices as AdditionalServiceId[],
   })
+
+  // A flat-priced unit is booked whole, so a party bigger than it can hold
+  // must be rejected here too — the stepper hides these, but nothing stops a
+  // request built by hand.
+  if (!fitsParty(accommodationShape, priced.partySize)) {
+    return {
+      ok: false,
+      error: `${accommodation.name} does not have room for a party of ${priced.partySize}. Please choose a larger option.`,
+    }
+  }
 
   const available = await bedsAvailableFor(accommodation._id)
   if (available < priced.bedsRequired) {
@@ -92,16 +107,13 @@ export async function submitRegistration(
     }
   }
 
-  const existing = await DelegateModel.findOne({ email: values.email })
-  if (existing) {
-    return {
-      ok: false,
-      error:
-        "A registration already exists for this email. Check your status page, or contact us if this is a mistake.",
-    }
-  }
+  // One email can register more than one delegate — a parent registering
+  // several family members separately, for instance — so no uniqueness check
+  // runs here. Each delegate still gets their own LFF ID, accommodation and
+  // status page; email is only ever a contact address, never an identity key.
 
   const companions = buildCompanions(values)
+  const statusToken = generateStatusToken()
 
   const delegate = await DelegateModel.create({
     fullName: values.fullName,
@@ -120,6 +132,7 @@ export async function submitRegistration(
     totalPaid: 0,
     source: "registration_form",
     customFields: customParsed.data,
+    statusToken,
   })
 
   await BookingModel.create({
@@ -164,6 +177,7 @@ export async function submitRegistration(
       fullName: values.fullName,
       accommodationName: accommodation.name,
       totalDue: priced.total,
+      statusToken,
     }),
   })
 
@@ -172,6 +186,7 @@ export async function submitRegistration(
     delegateId: String(delegate._id),
     totalDue: priced.total,
     accommodationName: accommodation.name,
+    statusToken,
   }
 }
 
@@ -182,9 +197,18 @@ function buildCompanions(values: {
   partnerPhone?: string
   partnerWhatsapp?: string
   partnerGender?: "Male" | "Female"
-  familyMember1?: string
-  familyMember2?: string
-  familyMember3?: string
+  familyMember1FullName?: string
+  familyMember1Gender?: "Male" | "Female"
+  familyMember1Phone?: string
+  familyMember1Whatsapp?: string
+  familyMember2FullName?: string
+  familyMember2Gender?: "Male" | "Female"
+  familyMember2Phone?: string
+  familyMember2Whatsapp?: string
+  familyMember3FullName?: string
+  familyMember3Gender?: "Male" | "Female"
+  familyMember3Phone?: string
+  familyMember3Whatsapp?: string
 }) {
   const branch = companionStepFor(values.comingWith)
 
@@ -201,11 +225,37 @@ function buildCompanions(values: {
   }
 
   if (branch === "family") {
-    const names = [values.familyMember1, values.familyMember2, values.familyMember3]
-    return names
+    const members = [
+      {
+        fullName: values.familyMember1FullName,
+        gender: values.familyMember1Gender,
+        phone: values.familyMember1Phone,
+        whatsapp: values.familyMember1Whatsapp,
+      },
+      {
+        fullName: values.familyMember2FullName,
+        gender: values.familyMember2Gender,
+        phone: values.familyMember2Phone,
+        whatsapp: values.familyMember2Whatsapp,
+      },
+      {
+        fullName: values.familyMember3FullName,
+        gender: values.familyMember3Gender,
+        phone: values.familyMember3Phone,
+        whatsapp: values.familyMember3Whatsapp,
+      },
+    ]
+
+    return members
       .slice(0, familyMemberCount(values.comingWith))
-      .filter((name): name is string => Boolean(name))
-      .map((name) => ({ kind: "family_member" as const, fullName: name }))
+      .filter((member): member is typeof member & { fullName: string } => Boolean(member.fullName))
+      .map((member) => ({
+        kind: "family_member" as const,
+        fullName: member.fullName,
+        gender: member.gender,
+        phone: member.phone ?? "",
+        whatsapp: member.whatsapp ?? "",
+      }))
   }
 
   return []

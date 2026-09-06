@@ -9,6 +9,7 @@ import { connectDB } from "@/lib/mongoose"
 import { trySendEmail } from "@/lib/email"
 import { paymentConfirmedEmail, paymentFailedEmail } from "@/lib/email-templates"
 import { identifiersFor, nextDelegateNumber } from "@/lib/lff-id"
+import { generateStatusToken } from "@/lib/status-token"
 import { logActivity } from "@/lib/activity-log"
 import { publishDashboardEvent } from "@/lib/pusher"
 import { MAX_PAYMENT_ATTEMPTS, PAYMENT_RETRY_SCHEDULE_MINUTES } from "@/lib/constants"
@@ -91,8 +92,15 @@ export async function confirmPayment(input: {
   )
 
   const fresh = await DelegateModel.findById(delegate._id).select(
-    "fullName email lffId accommodationCode totalDue totalPaid"
+    "fullName email lffId accommodationCode totalDue totalPaid statusToken"
   )
+
+  // Every delegate is meant to have one, but a record confirmed before this
+  // field existed would otherwise get a broken profile link in its email.
+  if (fresh && !fresh.statusToken) {
+    fresh.statusToken = generateStatusToken()
+    await fresh.save()
+  }
 
   await logActivity({
     actorUserId: input.verifiedByUserId ?? null,
@@ -125,6 +133,7 @@ export async function confirmPayment(input: {
       accommodationName: accommodation?.name ?? "To be allocated",
       amountPaid: payment.amount,
       balance,
+      statusToken: fresh.statusToken ?? "",
     })
     await trySendEmail({ to: fresh.email, ...message })
   }
