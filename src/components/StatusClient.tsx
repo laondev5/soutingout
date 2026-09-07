@@ -109,10 +109,18 @@ export function StatusClient({
         return
       }
 
-      toast.success("Receipt sent. Your sub-admin will confirm it shortly.")
+      toast.success("Receipt sent. Taking you to the counseling form…")
       setReceipts([])
       setNote("")
       setDelegate({ ...delegate, hasPendingReceipt: true })
+
+      // Sending the receipt is the moment a transfer-payer has "paid" as far
+      // as this app can tell, so it is where they get sent on to the
+      // counseling form — the same place a card payer lands after checkout.
+      // Delayed just enough that the confirmation is actually read first.
+      window.setTimeout(() => {
+        window.location.href = COUNSELING_FORM_URL
+      }, 1800)
     })
   }
 

@@ -44,7 +44,7 @@ export default async function StatusTokenPage({
         </div>
       </div>
 
-      <div className="px-6 py-10">
+      <div className="px-6 pt-10 pb-28">
         <StatusClient
           paystackEnabled={isPaystackConfigured()}
           uploadsEnabled={isCloudinaryConfigured()}

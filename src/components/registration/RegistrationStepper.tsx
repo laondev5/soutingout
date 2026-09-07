@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils"
 import {
   ADDITIONAL_SERVICES,
   COMING_WITH_OPTIONS,
+  COUNSELING_FORM_URL,
   EVENT,
   GENDERS,
   companionStepFor,
@@ -139,6 +140,11 @@ export function RegistrationStepper({
   // "full" mode; only the delegate changes it in "installment" mode. A string
   // so the field can be emptied while typing.
   const [payAmount, setPayAmount] = useState("")
+  // True while the Paystack checkout is being created. The registration is
+  // already saved by then, so `done` is set — but showing someone who chose
+  // to pay by card a screen full of bank-transfer details, however briefly,
+  // is exactly the wrong thing. They get a handoff notice instead.
+  const [handingOff, setHandingOff] = useState(false)
 
   const form = useForm<RegistrationInput>({
     resolver: zodResolver(registrationSchema) as unknown as Resolver<RegistrationInput>,
@@ -284,6 +290,8 @@ export function RegistrationStepper({
       })
 
       if (payMethod === "paystack" && paystackEnabled && result.totalDue > 0) {
+        setHandingOff(true)
+
         const checkout = await initializePayment({
           delegateId: result.delegateId,
           amount: payMode === "full" ? result.totalDue : Number(payAmount) || result.totalDue,
@@ -294,8 +302,9 @@ export function RegistrationStepper({
           return
         }
 
-        // Paystack unreachable, or nothing owed. Fall through to the
-        // confirmation screen, which offers both paying online and a transfer.
+        // Paystack unreachable. Only now does the confirmation screen appear,
+        // and only then does it offer a transfer as the way out.
+        setHandingOff(false)
         toast.error(`${checkout.error} Your registration is saved.`)
       }
 
@@ -309,15 +318,28 @@ export function RegistrationStepper({
   })
 
   if (done) {
+    if (handingOff) {
+      return <HandoffPanel />
+    }
+
     return (
-      <SubmittedPanel {...done} email={values.email} paystackEnabled={paystackEnabled} />
+      <SubmittedPanel
+        {...done}
+        email={values.email}
+        paystackEnabled={paystackEnabled}
+        payMethod={payMethod}
+      />
     )
   }
 
   const progress = ((safeIndex + 1) / steps.length) * 100
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-6 py-10">
+    // Deep bottom padding, not decoration: the WhatsApp button is fixed to the
+    // bottom-right of the viewport and sat directly on top of "Next" at full
+    // scroll, so tapping the middle of "Next" opened WhatsApp instead of
+    // advancing. The padding lifts the controls clear of it.
+    <div className="mx-auto w-full max-w-2xl px-6 pt-10 pb-28">
       <header className="mb-8">
         <div className="flex items-baseline justify-between gap-4">
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
@@ -1043,6 +1065,22 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   )
 }
 
+/** Shown for the moment between saving the registration and reaching Paystack. */
+function HandoffPanel() {
+  return (
+    <div className="mx-auto w-full max-w-2xl px-6 pt-16 pb-28">
+      <div className="flex items-center gap-3">
+        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <h1 className="text-2xl font-semibold tracking-tight">Taking you to Paystack…</h1>
+      </div>
+      <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+        Your registration is saved. Do not close this tab — you will be redirected to complete
+        your payment by card, transfer or USSD.
+      </p>
+    </div>
+  )
+}
+
 function SubmittedPanel({
   accommodationName,
   totalDue,
@@ -1050,6 +1088,7 @@ function SubmittedPanel({
   delegateId,
   statusToken,
   paystackEnabled,
+  payMethod,
 }: {
   accommodationName: string
   totalDue: number
@@ -1057,8 +1096,16 @@ function SubmittedPanel({
   delegateId: string
   statusToken: string
   paystackEnabled: boolean
+  /** What they chose on the payment step — decides what this screen leads with. */
+  payMethod: PayMethod
 }) {
   const [paying, setPaying] = useState(false)
+
+  // Someone who chose to pay by card only reaches this screen when the
+  // checkout could not be created. Leading with the account number would be
+  // answering a question they did not ask, so it goes behind a disclosure —
+  // still there, because a broken gateway must not leave them unable to pay.
+  const choseCard = payMethod === "paystack" && paystackEnabled && totalDue > 0
 
   // Someone who chose a transfer — or whose checkout failed — can still pay
   // online from here without going hunting for the status page.
@@ -1077,7 +1124,7 @@ function SubmittedPanel({
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-6 py-16">
+    <div className="mx-auto w-full max-w-2xl px-6 pt-16 pb-28">
       <div className="flex size-11 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
         <Check className="size-6" />
       </div>
@@ -1094,16 +1141,35 @@ function SubmittedPanel({
         ID and accommodation code by email.
       </div>
 
-      <div className="mt-6 rounded-lg border bg-muted/40 p-4">
-        <p className="text-sm font-semibold">Transfer to</p>
-        <dl className="mt-3 space-y-1.5 text-sm">
-          <Row label="Account name">{EVENT.bank.accountName}</Row>
-          <Row label="Account number">
-            <span className="font-mono font-semibold">{EVENT.bank.accountNumber}</span>
-          </Row>
-          <Row label="Bank">{EVENT.bank.bankName}</Row>
-        </dl>
-      </div>
+      {choseCard ? (
+        <details className="mt-6 rounded-lg border bg-muted/40 p-4">
+          <summary className="cursor-pointer text-sm font-semibold">
+            Pay by bank transfer instead
+          </summary>
+          <dl className="mt-3 space-y-1.5 text-sm">
+            <Row label="Account name">{EVENT.bank.accountName}</Row>
+            <Row label="Account number">
+              <span className="font-mono font-semibold">{EVENT.bank.accountNumber}</span>
+            </Row>
+            <Row label="Bank">{EVENT.bank.bankName}</Row>
+          </dl>
+        </details>
+      ) : (
+        <div className="mt-6 rounded-lg border bg-muted/40 p-4">
+          <p className="text-sm font-semibold">Transfer to</p>
+          <dl className="mt-3 space-y-1.5 text-sm">
+            <Row label="Account name">{EVENT.bank.accountName}</Row>
+            <Row label="Account number">
+              <span className="font-mono font-semibold">{EVENT.bank.accountNumber}</span>
+            </Row>
+            <Row label="Bank">{EVENT.bank.bankName}</Row>
+          </dl>
+          <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+            Once you have transferred, upload your receipt from your profile so a sub-admin can
+            confirm it.
+          </p>
+        </div>
+      )}
 
       <div className="mt-7 flex flex-wrap gap-3">
         {paystackEnabled && totalDue > 0 ? (
@@ -1125,9 +1191,25 @@ function SubmittedPanel({
         </Link>
       </div>
 
+      <div className="mt-8 rounded-lg border p-4">
+        <p className="text-sm font-semibold">One more step</p>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+          Please also complete the delegate counseling form. You can do this now — it does not
+          have to wait for your payment to be confirmed.
+        </p>
+        <a
+          href={COUNSELING_FORM_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={buttonVariants({ className: "mt-4" })}
+        >
+          Continue to the counseling form
+        </a>
+      </div>
+
       <p className="mt-4 text-xs text-muted-foreground">
-        We&rsquo;ve also emailed you this link — bookmark it to check your status or make a
-        payment any time.
+        We&rsquo;ve also emailed you a link to your profile — bookmark it to check your status or
+        make a payment any time.
       </p>
     </div>
   )
