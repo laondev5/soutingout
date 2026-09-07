@@ -34,6 +34,9 @@ export function whatsappLink(message: string = WHATSAPP_DEFAULT_MESSAGE) {
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
 }
 
+/** Where a confirmed delegate goes next, outside the app entirely. */
+export const COUNSELING_FORM_URL = "https://lffsortingout.org/register.aspx"
+
 export const CURRENCY = "NGN"
 
 /** Naira integers. Format for display only — never store formatted strings. */

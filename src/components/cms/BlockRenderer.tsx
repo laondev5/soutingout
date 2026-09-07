@@ -160,7 +160,7 @@ function BlockView({ block, context }: { block: Block; context: RenderContext })
 
     case "notice": {
       const tones: Record<string, string> = {
-        info: "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-100",
+        info: "border-orange-200 bg-orange-50 text-orange-900 dark:border-orange-900 dark:bg-orange-950/50 dark:text-orange-100",
         warning:
           "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-100",
         danger:
@@ -235,13 +235,13 @@ function BlockView({ block, context }: { block: Block; context: RenderContext })
               key={i}
               className={cn(
                 "rounded-lg border p-4",
-                context.onDark ? "border-emerald-900 bg-emerald-950/60" : "bg-card"
+                context.onDark ? "border-orange-900 bg-orange-950/60" : "bg-card"
               )}
             >
               <dt
                 className={cn(
                   "text-xs uppercase tracking-wider",
-                  context.onDark ? "text-emerald-200/70" : "text-muted-foreground"
+                  context.onDark ? "text-orange-200/70" : "text-muted-foreground"
                 )}
               >
                 {item.label}

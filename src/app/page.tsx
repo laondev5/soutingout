@@ -29,10 +29,10 @@ export default async function HomePage() {
 
   return (
     <main className="flex-1 cms-canvas">
-      <section className="border-b border-emerald-900 bg-emerald-950 text-emerald-50">
+      <section className="border-b border-orange-900 bg-orange-950 text-orange-50">
         <div className="mx-auto w-full max-w-3xl px-6 py-20">
           <Logo width={72} onDark priority />
-          <p className="mt-7 text-xs font-medium uppercase tracking-[0.18em] text-emerald-200/70">
+          <p className="mt-7 text-xs font-medium uppercase tracking-[0.18em] text-orange-200/70">
             Registration is open
           </p>
 
@@ -55,7 +55,7 @@ export default async function HomePage() {
                 size: "lg",
                 variant: "outline",
                 className:
-                  "border-emerald-800 bg-transparent text-emerald-50 hover:bg-emerald-900 hover:text-white",
+                  "border-orange-800 bg-transparent text-orange-50 hover:bg-orange-900 hover:text-white",
               })}
             >
               Check my status

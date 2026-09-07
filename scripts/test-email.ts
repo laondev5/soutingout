@@ -38,6 +38,7 @@ async function run() {
     accommodationName: "General hostels",
     amountPaid: 35_000,
     balance: 0,
+    statusToken: "test-token",
   })
 
   await sendEmailMessage({ to, ...message })

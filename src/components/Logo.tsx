@@ -3,9 +3,10 @@ import { cn } from "@/lib/utils"
 import { EVENT } from "@/lib/constants"
 
 /**
- * The Living Faith Foundation mark. The source art is transparent with dark
- * green and red ink, so it needs a light plate to stay legible on dark
- * backgrounds — `onDark` supplies one.
+ * The "Sorting Out" mark: a solid orange disc with a white script wordmark,
+ * square (1:1). Unlike the old logo, it is opaque and carries its own
+ * contrast, so it needs no light plate to stay legible on a dark background —
+ * `onDark` is kept only so call sites don't need to change.
  */
 export function Logo({
   className,
@@ -18,18 +19,15 @@ export function Logo({
   onDark?: boolean
   priority?: boolean
 }) {
+  void onDark
   return (
     <Image
       src="/logo.png"
-      alt={`${EVENT.shortName} — Living Faith Foundation`}
+      alt={`${EVENT.shortName} — Sorting Out`}
       width={width}
-      height={Math.round((width * 764) / 1009)}
+      height={width}
       priority={priority}
-      className={cn(
-        "h-auto w-auto object-contain",
-        onDark && "rounded-md bg-white/95 p-1",
-        className
-      )}
+      className={cn("h-auto w-auto object-contain", className)}
       style={{ width, height: "auto" }}
     />
   )

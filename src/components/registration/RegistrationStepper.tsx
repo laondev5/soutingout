@@ -29,7 +29,7 @@ import {
   formatNaira,
   type AdditionalServiceId,
 } from "@/lib/constants"
-import { quote } from "@/lib/pricing"
+import { fitsParty, quote } from "@/lib/pricing"
 import type { AccommodationOption } from "@/lib/accommodation"
 import {
   registrationSchema,
@@ -82,9 +82,18 @@ const EMPTY: RegistrationInput = {
   partnerPhone: "",
   partnerWhatsapp: "",
   partnerGender: undefined,
-  familyMember1: "",
-  familyMember2: "",
-  familyMember3: "",
+  familyMember1FullName: "",
+  familyMember1Gender: undefined,
+  familyMember1Phone: "",
+  familyMember1Whatsapp: "",
+  familyMember2FullName: "",
+  familyMember2Gender: undefined,
+  familyMember2Phone: "",
+  familyMember2Whatsapp: "",
+  familyMember3FullName: "",
+  familyMember3Gender: undefined,
+  familyMember3Phone: "",
+  familyMember3Whatsapp: "",
   accommodationId: "",
   comments: "",
   additionalServices: [],
@@ -118,10 +127,18 @@ export function RegistrationStepper({
     accommodationName: string
     totalDue: number
     delegateId: string
+    statusToken: string
   } | null>(null)
   // How the delegate said they will pay. Only decides what happens after the
   // registration is saved — the registration itself is identical either way.
   const [payMethod, setPayMethod] = useState<PayMethod>(paystackEnabled ? "paystack" : "transfer")
+  // Full payment or an installment — toggled explicitly, so "pay online"
+  // never silently charges less than the delegate meant to pay.
+  const [payMode, setPayMode] = useState<"full" | "installment">("full")
+  // What they want to pay online right now. Tracks the total automatically in
+  // "full" mode; only the delegate changes it in "installment" mode. A string
+  // so the field can be emptied while typing.
+  const [payAmount, setPayAmount] = useState("")
 
   const form = useForm<RegistrationInput>({
     resolver: zodResolver(registrationSchema) as unknown as Resolver<RegistrationInput>,
@@ -195,6 +212,21 @@ export function RegistrationStepper({
     additionalServices: (values.additionalServices ?? []) as AdditionalServiceId[],
   })
 
+  // "Full" always tracks the live total exactly, both up and down — the
+  // point of that mode is that it is never a stale number. "Installment"
+  // only ever gets pulled down, and only if the total shrinks below whatever
+  // was typed in — a deliberately smaller amount is never overwritten.
+  useEffect(() => {
+    if (payMode === "full") {
+      setPayAmount(String(priced.total))
+      return
+    }
+    setPayAmount((current) => {
+      if (!current) return String(priced.total)
+      return Number(current) > priced.total ? String(priced.total) : current
+    })
+  }, [priced.total, payMode])
+
   async function goNext() {
     const fields = STEP_FIELDS[step as keyof typeof STEP_FIELDS] as
       | readonly (keyof RegistrationInput)[]
@@ -248,10 +280,14 @@ export function RegistrationStepper({
         accommodationName: result.accommodationName,
         totalDue: result.totalDue,
         delegateId: result.delegateId,
+        statusToken: result.statusToken,
       })
 
       if (payMethod === "paystack" && paystackEnabled && result.totalDue > 0) {
-        const checkout = await initializePayment({ delegateId: result.delegateId })
+        const checkout = await initializePayment({
+          delegateId: result.delegateId,
+          amount: payMode === "full" ? result.totalDue : Number(payAmount) || result.totalDue,
+        })
 
         if (checkout.ok) {
           window.location.href = checkout.authorizationUrl
@@ -320,6 +356,10 @@ export function RegistrationStepper({
               priced={priced}
               payMethod={payMethod}
               onPayMethodChange={setPayMethod}
+              payMode={payMode}
+              onPayModeChange={setPayMode}
+              payAmount={payAmount}
+              onPayAmountChange={setPayAmount}
               paystackEnabled={paystackEnabled}
             />
           ) : null}
@@ -531,11 +571,18 @@ function PartnerStep({ form }: StepForm) {
   )
 }
 
+/** One family member's field names, per index (1-based to match the schema). */
+const FAMILY_MEMBER_FIELDS = ([1, 2, 3] as const).map((n) => ({
+  fullName: `familyMember${n}FullName` as const,
+  gender: `familyMember${n}Gender` as const,
+  phone: `familyMember${n}Phone` as const,
+  whatsapp: `familyMember${n}Whatsapp` as const,
+}))
+
 function FamilyStep({ form }: StepForm) {
-  const { register, formState, watch } = form
+  const { register, control, formState, watch } = form
   const errors = formState.errors
   const count = familyMemberCount(watch("comingWith"))
-  const fields = ["familyMember1", "familyMember2", "familyMember3"] as const
 
   return (
     <>
@@ -544,17 +591,54 @@ function FamilyStep({ form }: StepForm) {
         Do not include yourself — you are already registered above.
       </p>
 
-      {fields.slice(0, count).map((name, index) => (
-        <Field
-          key={name}
-          label={`Full name and gender of family member ${index + 1}`}
-          htmlFor={name}
-          required
-          error={errors[name]?.message}
-          hint="For example: Grace Olaiya, Female"
-        >
-          <Input id={name} {...register(name)} />
-        </Field>
+      {FAMILY_MEMBER_FIELDS.slice(0, count).map((names, index) => (
+        <div key={names.fullName} className="space-y-4 rounded-lg border p-4">
+          <p className="text-sm font-medium">Family member {index + 1}</p>
+
+          <Field
+            label="Full name"
+            htmlFor={names.fullName}
+            required
+            error={errors[names.fullName]?.message}
+          >
+            <Input id={names.fullName} {...register(names.fullName)} />
+          </Field>
+
+          <Controller
+            control={control}
+            name={names.gender}
+            render={({ field }) => (
+              <Field label="Gender" required error={errors[names.gender]?.message}>
+                <RadioGroup
+                  value={field.value ?? ""}
+                  onValueChange={field.onChange}
+                  className="flex gap-6"
+                >
+                  {GENDERS.map((gender) => (
+                    <div key={gender} className="flex items-center gap-2">
+                      <RadioGroupItem value={gender} id={`${names.gender}-${gender}`} />
+                      <Label htmlFor={`${names.gender}-${gender}`} className="font-normal">
+                        {gender}
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+              </Field>
+            )}
+          />
+
+          <Field label="Phone number" htmlFor={names.phone} error={errors[names.phone]?.message}>
+            <Input id={names.phone} inputMode="tel" {...register(names.phone)} />
+          </Field>
+
+          <Field
+            label="WhatsApp number"
+            htmlFor={names.whatsapp}
+            error={errors[names.whatsapp]?.message}
+          >
+            <Input id={names.whatsapp} inputMode="tel" {...register(names.whatsapp)} />
+          </Field>
+        </div>
       ))}
     </>
   )
@@ -564,12 +648,29 @@ function AccommodationStep({
   form,
   accommodations,
 }: StepForm & { accommodations: AccommodationOption[] }) {
-  const { control, formState, watch } = form
+  const { control, formState, watch, setValue, getValues } = form
   const partySize = quote({
     accommodation: null,
     comingWith: watch("comingWith"),
     additionalServices: [],
   }).partySize
+
+  // A tier too small for the party is not shown at all — a family of 4 is
+  // never offered a lodge that only fits 3.
+  const available = useMemo(
+    () => accommodations.filter((option) => fitsParty(option, partySize)),
+    [accommodations, partySize]
+  )
+
+  // Going back and choosing a bigger party after already picking a tier can
+  // leave a now-too-small selection in place; clear it so nothing invalid can
+  // be submitted.
+  useEffect(() => {
+    const current = getValues("accommodationId")
+    if (current && !available.some((option) => option.id === current)) {
+      setValue("accommodationId", "")
+    }
+  }, [available, getValues, setValue])
 
   return (
     <Controller
@@ -583,7 +684,7 @@ function AccommodationStep({
           hint="All costs include feeding, accommodation and registration for the entire period of the Sorting Out."
         >
           <RadioGroup value={field.value ?? ""} onValueChange={field.onChange} className="gap-2">
-            {accommodations.map((option) => {
+            {available.map((option) => {
               const bedsNeeded = option.pricingMode === "flat" ? option.capacityPerUnit : partySize
               const soldOut = option.bedsAvailable < bedsNeeded
               const total =
@@ -712,11 +813,19 @@ function PaymentStep({
   priced,
   payMethod,
   onPayMethodChange,
+  payMode,
+  onPayModeChange,
+  payAmount,
+  onPayAmountChange,
   paystackEnabled,
 }: StepForm & {
   priced: ReturnType<typeof quote>
   payMethod: PayMethod
   onPayMethodChange: (method: PayMethod) => void
+  payMode: "full" | "installment"
+  onPayModeChange: (mode: "full" | "installment") => void
+  payAmount: string
+  onPayAmountChange: (amount: string) => void
   paystackEnabled: boolean
 }) {
   const { control, formState } = form
@@ -766,6 +875,43 @@ function PaymentStep({
         </fieldset>
       ) : null}
 
+      {payMethod === "paystack" && paystackEnabled && priced.total > 0 ? (
+        <div className="space-y-3 rounded-lg border p-4">
+          <AmountModeToggle
+            mode={payMode}
+            onChange={(mode) => {
+              onPayModeChange(mode)
+              if (mode === "installment" && Number(payAmount) >= priced.total) {
+                onPayAmountChange(String(Math.round(priced.total / 2)))
+              }
+            }}
+          />
+
+          {payMode === "full" ? (
+            <p className="text-sm">
+              Paying <strong>{formatNaira(priced.total)}</strong> now, in full.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              <Label htmlFor="pay-amount">Amount to pay now (₦)</Label>
+              <Input
+                id="pay-amount"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={priced.total}
+                value={payAmount}
+                onChange={(event) => onPayAmountChange(event.target.value)}
+              />
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Pay any amount up to {formatNaira(priced.total)} now, and the rest later from your
+                status page.
+              </p>
+            </div>
+          )}
+        </div>
+      ) : null}
+
       {payMethod === "transfer" || !paystackEnabled || priced.total === 0 ? (
         <div className="rounded-lg border bg-muted/40 p-4">
           <p className="text-sm font-semibold">Transfer to</p>
@@ -777,9 +923,10 @@ function PaymentStep({
             <Row label="Bank">{EVENT.bank.bankName}</Row>
           </dl>
           <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-            Screenshot or save this page if you are not paying immediately. After submitting you
-            can upload your proof of payment, or pay online by card. Accommodation is reserved
-            only once payment is confirmed.
+            Screenshot or save this page if you are not paying immediately. Transferring less than
+            the full total is fine — installments are accepted, and the balance is tracked
+            automatically. After submitting you can upload your proof of payment, or pay online by
+            card. Accommodation is reserved only once payment is confirmed.
           </p>
         </div>
       ) : null}
@@ -810,6 +957,41 @@ function PaymentStep({
 
 // ── Bits ─────────────────────────────────────────────────────────────
 
+
+/** Full payment vs. an installment — a segmented switch, not a bare number field. */
+function AmountModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: "full" | "installment"
+  onChange: (mode: "full" | "installment") => void
+}) {
+  return (
+    <div role="group" aria-label="Payment amount" className="inline-flex rounded-lg border p-0.5">
+      {(
+        [
+          { value: "full" as const, label: "Pay in full" },
+          { value: "installment" as const, label: "Pay an installment" },
+        ]
+      ).map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          aria-pressed={mode === option.value}
+          className={cn(
+            "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+            mode === option.value
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-muted"
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 /** A selectable payment method, styled like the accommodation options. */
 function PayOption({
@@ -866,12 +1048,14 @@ function SubmittedPanel({
   totalDue,
   email,
   delegateId,
+  statusToken,
   paystackEnabled,
 }: {
   accommodationName: string
   totalDue: number
   email?: string
   delegateId: string
+  statusToken: string
   paystackEnabled: boolean
 }) {
   const [paying, setPaying] = useState(false)
@@ -933,10 +1117,18 @@ function SubmittedPanel({
           </Button>
         ) : null}
 
-        <Link href="/status" className={buttonVariants({ size: "lg", variant: "outline" })}>
-          Upload proof of payment
+        <Link
+          href={`/status/${statusToken}`}
+          className={buttonVariants({ size: "lg", variant: "outline" })}
+        >
+          View my profile
         </Link>
       </div>
+
+      <p className="mt-4 text-xs text-muted-foreground">
+        We&rsquo;ve also emailed you this link — bookmark it to check your status or make a
+        payment any time.
+      </p>
     </div>
   )
 }

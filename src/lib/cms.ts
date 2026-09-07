@@ -63,7 +63,9 @@ export const DEFAULT_CONTENT: Record<string, Block[]> = {
   ],
 
   "register.welcome": [
-    { id: "d1", type: "heading", visible: true, props: { text: "Welcome", level: "h2", align: "left" } },
+    // No leading "Welcome" heading here — the stepper already shows the step
+    // title above this content, and the two used to render on top of each
+    // other with identical text.
     {
       id: "d2",
       type: "paragraph",
@@ -125,7 +127,7 @@ export const DEFAULT_CONTENT: Record<string, Block[]> = {
   ],
 
   "register.fees": [
-    { id: "d1", type: "heading", visible: true, props: { text: "Fees", level: "h2", align: "left" } },
+    // No leading "Fees" heading — see the note on "register.welcome" above.
     {
       id: "d2",
       type: "paragraph",
@@ -150,7 +152,7 @@ export const DEFAULT_CONTENT: Record<string, Block[]> = {
   ],
 
   "register.feeding": [
-    { id: "d1", type: "heading", visible: true, props: { text: "Feeding", level: "h2", align: "left" } },
+    // No leading "Feeding" heading — see the note on "register.welcome" above.
     {
       id: "d2",
       type: "notice",

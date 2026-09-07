@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import { CheckCircle2, Clock, CreditCard, Loader2, Search } from "lucide-react"
 import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
@@ -11,45 +11,71 @@ import { Textarea } from "@/components/ui/textarea"
 import { ImageUploader, type UploadedImage } from "@/components/ImageUploader"
 import { lookupStatus, submitReceipt, type DelegateStatus } from "@/actions/status.actions"
 import { initializePayment } from "@/actions/payment.actions"
-import { EVENT, formatNaira } from "@/lib/constants"
+import { COUNSELING_FORM_URL, EVENT, formatNaira } from "@/lib/constants"
 
 export function StatusClient({
   paystackEnabled,
   uploadsEnabled,
   initialReference,
+  initialDelegate,
 }: {
   paystackEnabled: boolean
   uploadsEnabled: boolean
   initialReference?: string
+  /** Loaded server-side from a `/status/<token>` link — skips the search form entirely. */
+  initialDelegate?: DelegateStatus
 }) {
   const [email, setEmail] = useState("")
   const [lffId, setLffId] = useState("")
-  const [delegate, setDelegate] = useState<DelegateStatus | null>(null)
+  const [fullName, setFullName] = useState("")
+  const [ambiguous, setAmbiguous] = useState(false)
+  const [delegate, setDelegate] = useState<DelegateStatus | null>(initialDelegate ?? null)
   const [pending, startTransition] = useTransition()
 
   const [receipts, setReceipts] = useState<UploadedImage[]>([])
-  const [amount, setAmount] = useState("")
+  const [amount, setAmount] = useState(initialDelegate ? String(initialDelegate.balance) : "")
+  const [payMode, setPayMode] = useState<"full" | "installment">("full")
   const [note, setNote] = useState("")
 
   function lookup() {
     startTransition(async () => {
-      const result = await lookupStatus({ email, lffId })
+      const result = await lookupStatus({ email, lffId, fullName })
 
       if (!result.ok) {
         toast.error(result.error)
+        // "More than one registration" tells the visitor to add a full name —
+        // surface that field rather than leave them guessing why it failed.
+        if (result.error.startsWith("More than one")) setAmbiguous(true)
         return
       }
 
       setDelegate(result.delegate)
       setAmount(String(result.delegate.balance))
+      setPayMode("full")
     })
+  }
+
+  function selectPayMode(mode: "full" | "installment") {
+    setPayMode(mode)
+    if (!delegate) return
+    if (mode === "full") {
+      setAmount(String(delegate.balance))
+    } else if (Number(amount) >= delegate.balance) {
+      setAmount(String(Math.round(delegate.balance / 2)))
+    }
   }
 
   function payOnline() {
     if (!delegate) return
 
+    const payAmount = Number(amount)
+    if (!Number.isFinite(payAmount) || payAmount <= 0) {
+      toast.error("Enter how much you want to pay now.")
+      return
+    }
+
     startTransition(async () => {
-      const result = await initializePayment({ delegateId: delegate.id })
+      const result = await initializePayment({ delegateId: delegate.id, amount: payAmount })
 
       if (!result.ok) {
         toast.error(result.error)
@@ -71,7 +97,7 @@ export function StatusClient({
 
     startTransition(async () => {
       const result = await submitReceipt({
-        email: delegate.email,
+        delegateId: delegate.id,
         receiptUrl: receipt.url,
         receiptPublicId: receipt.publicId,
         amount: Number(amount || 0),
@@ -133,6 +159,21 @@ export function StatusClient({
             />
           </div>
 
+          {ambiguous ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="status-name">Full name</Label>
+              <Input
+                id="status-name"
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+                placeholder="As you registered it"
+              />
+              <p className="text-xs text-muted-foreground">
+                More than one registration uses this email — enter the full name to find yours.
+              </p>
+            </div>
+          ) : null}
+
           <Button onClick={lookup} disabled={pending} className="w-full">
             {pending ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
             Find my registration
@@ -178,6 +219,14 @@ export function StatusClient({
           <p className="text-xs text-muted-foreground">
             Bring both codes with you to {EVENT.venue}.
           </p>
+          <a
+            href={COUNSELING_FORM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonVariants({ className: "w-full" })}
+          >
+            Continue to the counseling form
+          </a>
         </div>
       ) : null}
 
@@ -208,6 +257,56 @@ export function StatusClient({
 
       {delegate.balance > 0 ? (
         <>
+          <div className="space-y-3 rounded-xl border p-4">
+            <div
+              role="group"
+              aria-label="Payment amount"
+              className="inline-flex rounded-lg border p-0.5"
+            >
+              {(
+                [
+                  { value: "full" as const, label: "Pay in full" },
+                  { value: "installment" as const, label: "Pay an installment" },
+                ]
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => selectPayMode(option.value)}
+                  aria-pressed={payMode === option.value}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    payMode === option.value
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
+            {payMode === "full" ? (
+              <p className="text-sm">
+                Paying <strong>{formatNaira(delegate.balance)}</strong> now, in full.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="pay-amount">Amount to pay now (₦)</Label>
+                <Input
+                  id="pay-amount"
+                  type="number"
+                  inputMode="numeric"
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Pay any amount up to your {formatNaira(delegate.balance)} balance, online or by
+                  transfer below.
+                </p>
+              </div>
+            )}
+          </div>
+
           {paystackEnabled ? (
             <Button onClick={payOnline} disabled={pending} className="w-full">
               {pending ? (
@@ -215,7 +314,7 @@ export function StatusClient({
               ) : (
                 <CreditCard className="size-4" />
               )}
-              Pay {formatNaira(delegate.balance)} online
+              Pay {formatNaira(Number(amount) || 0)} online
             </Button>
           ) : null}
 
@@ -239,17 +338,6 @@ export function StatusClient({
             {uploadsEnabled ? (
               <div className="space-y-3 border-t pt-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="receipt-amount">Amount transferred (₦)</Label>
-                  <Input
-                    id="receipt-amount"
-                    type="number"
-                    inputMode="numeric"
-                    value={amount}
-                    onChange={(event) => setAmount(event.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-1.5">
                   <Label>Receipt</Label>
                   <ImageUploader
                     kind="receipt"
@@ -270,7 +358,7 @@ export function StatusClient({
 
                 <Button onClick={sendReceipt} disabled={pending} className="w-full">
                   {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-                  Send receipt
+                  Send receipt for {formatNaira(Number(amount) || 0)}
                 </Button>
               </div>
             ) : (

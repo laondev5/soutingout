@@ -1,4 +1,4 @@
-import { EVENT, formatNaira } from "@/lib/constants"
+import { COUNSELING_FORM_URL, EVENT, formatNaira } from "@/lib/constants"
 import { appUrl as siteUrl } from "@/lib/app-url"
 
 function appUrl(path = "") {
@@ -49,7 +49,11 @@ export function registrationReceivedEmail(input: {
   fullName: string
   accommodationName: string
   totalDue: number
+  /** Opens this delegate's own status page directly — no email/LFF ID typing. */
+  statusToken: string
 }) {
+  const profileUrl = appUrl(`/status/${input.statusToken}`)
+
   const body = `
     <p>Hello ${escapeHtml(input.fullName)},</p>
     <p>We have received your registration for the <strong>${escapeHtml(EVENT.name)}</strong>.</p>
@@ -66,13 +70,14 @@ export function registrationReceivedEmail(input: {
       <tr><td style="color:#71717a;padding-right:12px;">Bank</td><td><strong>${escapeHtml(EVENT.bank.bankName)}</strong></td></tr>
     </table>
     <p>Then upload your proof of payment here:</p>
-    <p><a href="${appUrl("/status")}" style="display:inline-block;padding:11px 20px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;">Upload proof of payment</a></p>
-    <p style="color:#71717a;font-size:13px;">Installment payments are accepted, but the full amount must be paid before the retreat.</p>`
+    <p><a href="${profileUrl}" style="display:inline-block;padding:11px 20px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;">Upload proof of payment</a></p>
+    <p style="color:#71717a;font-size:13px;">Installment payments are accepted, but the full amount must be paid before the retreat.</p>
+    <p style="color:#71717a;font-size:13px;">This link is your own — bookmark it to check your status or make a payment any time, with nothing to type: <a href="${profileUrl}" style="color:#71717a;">${profileUrl}</a></p>`
 
   return {
     subject: `Registration received — ${EVENT.shortName}`,
     html: layout({ heading: "Registration received", body }),
-    text: `Hello ${input.fullName},\n\nWe have received your registration for the ${EVENT.name}.\n\nAccommodation: ${input.accommodationName}\nTotal due: ${formatNaira(input.totalDue)}\n\nYour place is not reserved until payment is confirmed.\n\nAccount name: ${EVENT.bank.accountName}\nAccount number: ${EVENT.bank.accountNumber}\nBank: ${EVENT.bank.bankName}\n\nUpload proof of payment: ${appUrl("/status")}`,
+    text: `Hello ${input.fullName},\n\nWe have received your registration for the ${EVENT.name}.\n\nAccommodation: ${input.accommodationName}\nTotal due: ${formatNaira(input.totalDue)}\n\nYour place is not reserved until payment is confirmed.\n\nAccount name: ${EVENT.bank.accountName}\nAccount number: ${EVENT.bank.accountNumber}\nBank: ${EVENT.bank.bankName}\n\nYour profile (bookmark this): ${profileUrl}`,
   }
 }
 
@@ -84,7 +89,11 @@ export function paymentConfirmedEmail(input: {
   accommodationName: string
   amountPaid: number
   balance: number
+  /** Opens this delegate's own status page directly — no email/LFF ID typing. */
+  statusToken: string
 }) {
+  const profileUrl = appUrl(`/status/${input.statusToken}`)
+
   const balanceNote =
     input.balance > 0
       ? `<p style="padding:12px 14px;background:#fef3c7;border-radius:8px;color:#78350f;">A balance of <strong>${formatNaira(input.balance)}</strong> is still outstanding. Please complete it before the retreat.</p>`
@@ -102,13 +111,17 @@ export function paymentConfirmedEmail(input: {
     </table>
     <p>You have been allocated <strong>${escapeHtml(input.accommodationName)}</strong>. Please bring both codes with you — they are how our team identifies you and your lodging on arrival.</p>
     ${balanceNote}
+    <p style="margin:18px 0;"><a href="${profileUrl}" style="display:inline-block;padding:11px 20px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;">View my profile</a></p>
+    <p>One more thing before the retreat — please complete the counseling form:</p>
+    <p style="margin:0 0 18px;"><a href="${COUNSELING_FORM_URL}" style="display:inline-block;padding:11px 20px;background:#ffffff;color:#0f172a;text-decoration:none;border-radius:8px;font-weight:600;border:1px solid #0f172a;">Continue to the counseling form</a></p>
     <p style="margin-top:18px;">Arrival opens Friday, 2nd October 2026. The retreat begins at ${escapeHtml(EVENT.startTimeLabel)}.</p>
-    <p style="color:#71717a;font-size:13px;">Feeding is once daily as delegates are expected to be on a fast. If a medical condition prevents you fasting, please bring your own snacks.</p>`
+    <p style="color:#71717a;font-size:13px;">Feeding is once daily as delegates are expected to be on a fast. If a medical condition prevents you fasting, please bring your own snacks.</p>
+    <p style="color:#71717a;font-size:13px;">Bookmark your profile to come back any time: <a href="${profileUrl}" style="color:#71717a;">${profileUrl}</a></p>`
 
   return {
     subject: `You're confirmed — ${input.lffId}`,
     html: layout({ heading: "Payment confirmed", body }),
-    text: `Hello ${input.fullName},\n\nYour payment of ${formatNaira(input.amountPaid)} has been confirmed.\n\nLFF ID: ${input.lffId}\nAccommodation code: ${input.accommodationCode}\nAccommodation: ${input.accommodationName}\n\n${input.balance > 0 ? `Outstanding balance: ${formatNaira(input.balance)}` : "Your payment is complete."}\n\nBring both codes with you.`,
+    text: `Hello ${input.fullName},\n\nYour payment of ${formatNaira(input.amountPaid)} has been confirmed.\n\nLFF ID: ${input.lffId}\nAccommodation code: ${input.accommodationCode}\nAccommodation: ${input.accommodationName}\n\n${input.balance > 0 ? `Outstanding balance: ${formatNaira(input.balance)}` : "Your payment is complete."}\n\nYour profile: ${profileUrl}\n\nPlease also complete the counseling form: ${COUNSELING_FORM_URL}\n\nBring both codes with you.`,
   }
 }
 

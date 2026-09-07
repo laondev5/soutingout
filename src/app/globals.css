@@ -53,43 +53,48 @@
 }
 
 :root {
-  /* Palette taken from the LFF logo: the deep forest green of the globe and
-     shield, the amber of the ring and flame, and the red of the wordmark.
-     Greens carry identity, amber carries attention, red stays for danger. */
+  /* Palette taken from the new "Sorting Out" mark: a solid burnt-orange disc
+     with a white script wordmark. Orange now carries brand identity end to
+     end; success stays green, warning stays amber and destructive stays red
+     because those are status colours, not brand colours, and changing them
+     would make "paid" and "brand" mean the same thing at a glance. */
 
-  /* Warm off-white rather than pure white, so the greens read as deliberate. */
-  --background: oklch(0.992 0.004 120);
-  --foreground: oklch(0.21 0.02 155);
+  /* Warm off-white rather than pure white, so the orange reads as deliberate. */
+  --background: oklch(0.987 0.006 60);
+  --foreground: oklch(0.237 0.033 51);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.02 155);
+  --card-foreground: oklch(0.237 0.033 51);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.02 155);
+  --popover-foreground: oklch(0.237 0.033 51);
 
-  /* Logo green. */
-  --primary: oklch(0.45 0.115 154);
-  --primary-foreground: oklch(0.985 0.01 150);
+  /* Logo orange, darkened from the mark's own #ff6600 so white button text
+     clears WCAG AA — the disc's full brightness only reaches 2.9:1. */
+  --primary: oklch(0.553 0.174 38);
+  --primary-foreground: oklch(0.983 0.009 52);
 
-  --secondary: oklch(0.955 0.018 150);
-  --secondary-foreground: oklch(0.33 0.07 154);
+  --secondary: oklch(0.96 0.02 65);
+  --secondary-foreground: oklch(0.408 0.116 38);
 
-  --muted: oklch(0.965 0.008 140);
-  --muted-foreground: oklch(0.5 0.02 150);
+  --muted: oklch(0.97 0.014 62);
+  --muted-foreground: oklch(0.559 0.045 52);
 
-  /* Logo amber, used for highlights and hover states. */
-  --accent: oklch(0.95 0.045 85);
-  --accent-foreground: oklch(0.38 0.09 62);
+  /* A light wash of the logo orange, for hover states and highlights. */
+  --accent: oklch(0.954 0.037 75);
+  --accent-foreground: oklch(0.47 0.143 37);
 
-  /* Logo red. */
+  /* Kept red and well clear of the new orange primary — a destructive action
+     must never read as "brand-coloured". */
   --destructive: oklch(0.565 0.208 27);
 
-  --border: oklch(0.9 0.012 150);
-  --input: oklch(0.9 0.012 150);
-  --ring: oklch(0.45 0.115 154);
+  --border: oklch(0.9 0.014 60);
+  --input: oklch(0.9 0.014 60);
+  --ring: oklch(0.553 0.174 38);
 
-  /* Chart series: green → amber → red → teal → olive, distinguishable both by
-     hue and by lightness so they survive greyscale printing. */
-  --chart-1: oklch(0.48 0.12 154);
+  /* Chart series: only the brand series (1) moved to orange. The rest were
+     already clear of both the old green and the new orange, so they stay —
+     gold, red, teal, olive, distinguishable by hue and lightness alike. */
+  --chart-1: oklch(0.62 0.19 40);
   --chart-2: oklch(0.73 0.165 62);
   --chart-3: oklch(0.6 0.19 27);
   --chart-4: oklch(0.62 0.1 195);
@@ -97,18 +102,19 @@
 
   --radius: 0.625rem;
 
-  /* Sidebar sits on a green-tinted ground so it separates from the content
+  /* Sidebar sits on an orange-tinted ground so it separates from the content
      column without needing a heavy border. */
-  --sidebar: oklch(0.975 0.012 152);
-  --sidebar-foreground: oklch(0.26 0.03 155);
-  --sidebar-primary: oklch(0.45 0.115 154);
-  --sidebar-primary-foreground: oklch(0.985 0.01 150);
-  --sidebar-accent: oklch(0.93 0.032 152);
-  --sidebar-accent-foreground: oklch(0.32 0.07 154);
-  --sidebar-border: oklch(0.9 0.018 152);
-  --sidebar-ring: oklch(0.45 0.115 154);
+  --sidebar: oklch(0.975 0.02 65);
+  --sidebar-foreground: oklch(0.26 0.03 50);
+  --sidebar-primary: oklch(0.553 0.174 38);
+  --sidebar-primary-foreground: oklch(0.983 0.009 52);
+  --sidebar-accent: oklch(0.93 0.045 65);
+  --sidebar-accent-foreground: oklch(0.42 0.12 38);
+  --sidebar-border: oklch(0.9 0.025 65);
+  --sidebar-ring: oklch(0.553 0.174 38);
 
-  /* Status tokens, shared by badges and stat tiles. */
+  /* Status tokens, shared by badges and stat tiles. Deliberately untouched by
+     the rebrand — see the note at the top of this block. */
   --success: oklch(0.55 0.135 152);
   --success-foreground: oklch(0.985 0.01 150);
   --warning: oklch(0.73 0.165 62);
@@ -116,48 +122,49 @@
 }
 
 .dark {
-  /* Near-black with a green cast, so the same palette holds at night. */
-  --background: oklch(0.16 0.014 155);
-  --foreground: oklch(0.96 0.008 150);
+  /* Near-black with a warm cast, so the same orange palette holds at night. */
+  --background: oklch(0.17 0.018 55);
+  --foreground: oklch(0.96 0.014 64);
 
-  --card: oklch(0.215 0.018 155);
-  --card-foreground: oklch(0.96 0.008 150);
-  --popover: oklch(0.215 0.018 155);
-  --popover-foreground: oklch(0.96 0.008 150);
+  --card: oklch(0.228 0.022 60);
+  --card-foreground: oklch(0.96 0.014 64);
+  --popover: oklch(0.228 0.022 60);
+  --popover-foreground: oklch(0.96 0.014 64);
 
-  /* Lifted well above the logo green — the dark ground needs the contrast. */
-  --primary: oklch(0.72 0.15 152);
-  --primary-foreground: oklch(0.16 0.03 155);
+  /* Lifted well above the button-safe light-mode orange — the dark ground
+     needs the extra brightness for the same reason it needed it in green. */
+  --primary: oklch(0.75 0.167 50);
+  --primary-foreground: oklch(0.19 0.03 50);
 
-  --secondary: oklch(0.28 0.025 155);
-  --secondary-foreground: oklch(0.96 0.008 150);
+  --secondary: oklch(0.28 0.03 55);
+  --secondary-foreground: oklch(0.96 0.014 64);
 
-  --muted: oklch(0.28 0.02 155);
-  --muted-foreground: oklch(0.72 0.02 150);
+  --muted: oklch(0.28 0.025 55);
+  --muted-foreground: oklch(0.72 0.03 55);
 
-  --accent: oklch(0.32 0.05 80);
-  --accent-foreground: oklch(0.9 0.09 80);
+  --accent: oklch(0.32 0.06 55);
+  --accent-foreground: oklch(0.88 0.09 60);
 
   --destructive: oklch(0.68 0.19 25);
 
-  --border: oklch(0.98 0.02 150 / 12%);
-  --input: oklch(0.98 0.02 150 / 16%);
-  --ring: oklch(0.72 0.15 152);
+  --border: oklch(0.98 0.02 60 / 12%);
+  --input: oklch(0.98 0.02 60 / 16%);
+  --ring: oklch(0.75 0.167 50);
 
-  --chart-1: oklch(0.72 0.15 152);
+  --chart-1: oklch(0.75 0.167 50);
   --chart-2: oklch(0.78 0.155 66);
   --chart-3: oklch(0.68 0.185 25);
   --chart-4: oklch(0.7 0.11 197);
   --chart-5: oklch(0.8 0.14 128);
 
-  --sidebar: oklch(0.2 0.02 155);
-  --sidebar-foreground: oklch(0.94 0.008 150);
-  --sidebar-primary: oklch(0.72 0.15 152);
-  --sidebar-primary-foreground: oklch(0.16 0.03 155);
-  --sidebar-accent: oklch(0.29 0.035 155);
-  --sidebar-accent-foreground: oklch(0.94 0.01 150);
-  --sidebar-border: oklch(0.98 0.02 150 / 12%);
-  --sidebar-ring: oklch(0.72 0.15 152);
+  --sidebar: oklch(0.21 0.025 55);
+  --sidebar-foreground: oklch(0.94 0.014 62);
+  --sidebar-primary: oklch(0.75 0.167 50);
+  --sidebar-primary-foreground: oklch(0.19 0.03 50);
+  --sidebar-accent: oklch(0.3 0.045 55);
+  --sidebar-accent-foreground: oklch(0.94 0.014 60);
+  --sidebar-border: oklch(0.98 0.02 60 / 12%);
+  --sidebar-ring: oklch(0.75 0.167 50);
 
   --success: oklch(0.72 0.15 152);
   --success-foreground: oklch(0.16 0.03 155);

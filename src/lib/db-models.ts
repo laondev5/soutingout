@@ -187,6 +187,14 @@ export interface IDelegate extends Timestamps {
 
   /** Answers to super-admin-defined fields. Never affects pricing. */
   customFields: Record<string, unknown>
+
+  /**
+   * A private, unguessable key into this one delegate's status page —
+   * `/status/<token>` — so an email link can reopen their profile with no
+   * email/LFF ID typing. Every delegate gets one, however they were created;
+   * it is never shown to anyone but them.
+   */
+  statusToken: string | null
 }
 
 const companionSchema = new Schema<ICompanion>(
@@ -245,6 +253,7 @@ const delegateSchema = new Schema<IDelegate>(
     importBatchId: { type: Schema.Types.ObjectId, ref: "ImportBatch", default: null },
     customFields: { type: Schema.Types.Mixed, default: {} },
     confirmedAt: { type: Date, default: null },
+    statusToken: { type: String, default: null },
   },
   { timestamps: true }
 )
@@ -256,6 +265,12 @@ const delegateSchema = new Schema<IDelegate>(
 delegateSchema.index(
   { lffId: 1 },
   { unique: true, partialFilterExpression: { lffId: { $type: "string" } } }
+)
+// Same reasoning: delegates created before this field existed are `null`
+// until a one-time backfill runs, and must not collide with each other.
+delegateSchema.index(
+  { statusToken: 1 },
+  { unique: true, partialFilterExpression: { statusToken: { $type: "string" } } }
 )
 delegateSchema.index(
   { accommodationCode: 1 },

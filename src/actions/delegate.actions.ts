@@ -15,7 +15,7 @@ import { can, canAccessDelegate, requireUser } from "@/lib/permissions"
 import { assignDelegate, type AssignableRole } from "@/lib/assignment"
 import { confirmPayment, reissueAccommodationCode } from "@/lib/payments"
 import { bedsAvailableFor } from "@/lib/accommodation"
-import { quote } from "@/lib/pricing"
+import { fitsParty, quote } from "@/lib/pricing"
 import { generateReference } from "@/lib/paystack"
 import { logActivity } from "@/lib/activity-log"
 import {
@@ -137,17 +137,11 @@ export async function updateDelegate(input: {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       return { ok: false, error: "Enter a valid email address." }
     }
-    // The status page looks a delegate up by LFF ID and email, so a duplicate
-    // would make two registrations answer to the same lookup.
+    // One email can cover several delegates — a parent registering multiple
+    // family members, for instance — so no uniqueness check runs here. Each
+    // delegate has their own status link (statusToken), which is what the
+    // status page actually resolves by; email is only ever a contact address.
     if (email !== delegate.email) {
-      const clash = await DelegateModel.exists({
-        email,
-        _id: { $ne: delegate._id },
-        registrationStatus: { $ne: "cancelled" },
-      })
-      if (clash) {
-        return { ok: false, error: "Another delegate is registered with that email address." }
-      }
       changed.email = email
       delegate.email = email
     }
@@ -266,6 +260,15 @@ export async function updateDelegate(input: {
       comingWith: delegate.comingWith,
       additionalServices: delegate.additionalServices as AdditionalServiceId[],
     })
+
+    // A bigger party (e.g. "Just me" edited to "My family of 4") can outgrow
+    // a flat-priced unit that was fine for the old answer.
+    if (accommodation && !fitsParty(accommodation, priced.partySize)) {
+      return {
+        ok: false,
+        error: `${accommodation.name} does not have room for a party of ${priced.partySize}. Move them to a larger accommodation first.`,
+      }
+    }
 
     const booking = await BookingModel.findOne({
       delegateId: delegate._id,
@@ -495,17 +498,26 @@ export async function changeAccommodation(input: {
     return { ok: false, error: "The delegate is already in that accommodation." }
   }
 
+  const accommodationShape = {
+    name: accommodation.name,
+    pricePerPerson: accommodation.pricePerPerson,
+    pricingMode: accommodation.pricingMode,
+    capacityPerUnit: accommodation.capacityPerUnit,
+    isFree: accommodation.isFree,
+  }
+
   const priced = quote({
-    accommodation: {
-      name: accommodation.name,
-      pricePerPerson: accommodation.pricePerPerson,
-      pricingMode: accommodation.pricingMode,
-      capacityPerUnit: accommodation.capacityPerUnit,
-      isFree: accommodation.isFree,
-    },
+    accommodation: accommodationShape,
     comingWith: delegate.comingWith,
     additionalServices: delegate.additionalServices as AdditionalServiceId[],
   })
+
+  if (!fitsParty(accommodationShape, priced.partySize)) {
+    return {
+      ok: false,
+      error: `${accommodation.name} does not have room for a party of ${priced.partySize}.`,
+    }
+  }
 
   const available = await bedsAvailableFor(accommodation._id)
   if (available < priced.bedsRequired) {

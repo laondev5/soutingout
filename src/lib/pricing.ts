@@ -60,6 +60,22 @@ export function bedsRequiredFor(
     : partySize
 }
 
+/**
+ * Whether a party can physically fit in a tier.
+ *
+ * A `per_person` tier scales with the party — each person takes their own bed,
+ * so there is no upper limit. A `flat` tier is booked as one whole unit
+ * regardless of headcount, so a family bigger than that unit's capacity
+ * literally would not fit — e.g. a family of 4 cannot go in a lodge built for
+ * 3, even though the price is charged once either way.
+ */
+export function fitsParty(
+  accommodation: Pick<PriceableAccommodation, "pricingMode" | "capacityPerUnit">,
+  partySize: number
+) {
+  return accommodation.pricingMode !== "flat" || accommodation.capacityPerUnit >= partySize
+}
+
 export function quote(input: {
   accommodation: PriceableAccommodation | null
   comingWith: ComingWith | null | undefined
