@@ -8,9 +8,15 @@ import { DelegateModel, PastoralSessionModel, UserModel } from "@/lib/db-models"
 import { connectDB } from "@/lib/mongoose"
 import { requireUser } from "@/lib/permissions"
 import { trySendEmail } from "@/lib/email"
-import { staffWelcomeEmail } from "@/lib/email-templates"
+import { staffPasswordSetupEmail } from "@/lib/email-templates"
 import { logActivity } from "@/lib/activity-log"
 import { assignDelegate } from "@/lib/assignment"
+import { appUrl } from "@/lib/app-url"
+import {
+  generatePasswordSetupToken,
+  passwordSetupPath,
+  PASSWORD_SETUP_TTL_HOURS,
+} from "@/lib/password-setup"
 import {
   DEFAULT_PASTOR_PERMISSIONS,
   DEFAULT_SUB_ADMIN_PERMISSIONS,
@@ -23,9 +29,15 @@ type StaffRole = "sub_admin" | "pastor"
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string }
 
-/** Readable but strong enough for a one-time credential. */
-function temporaryPassword() {
-  return crypto.randomBytes(9).toString("base64url")
+/**
+ * A password nobody knows, not even the person creating the account.
+ *
+ * `passwordHash` is required by the schema, but a new account is only ever
+ * meant to be opened through its set-password link — so it is seeded with
+ * something random and discarded rather than anything a person could type.
+ */
+function unusablePassword() {
+  return crypto.randomBytes(32).toString("base64url")
 }
 
 async function requireSuperAdminUser() {
@@ -43,7 +55,7 @@ export async function createStaff(input: {
   phone?: string
   maxDelegates?: number
   permissions?: Permission[]
-}): Promise<Result<{ temporaryPassword: string; emailSent: boolean }>> {
+}): Promise<Result<{ setupUrl: string; emailSent: boolean }>> {
   const actor = await requireSuperAdminUser()
   if (!actor) {
     return { ok: false, error: "Only a super admin can create staff accounts." }
@@ -66,7 +78,7 @@ export async function createStaff(input: {
     return { ok: false, error: "An account with that email already exists." }
   }
 
-  const password = temporaryPassword()
+  const setup = generatePasswordSetupToken()
   const requested = input.permissions?.filter((p) =>
     (PERMISSIONS as readonly string[]).includes(p)
   )
@@ -75,7 +87,9 @@ export async function createStaff(input: {
     name,
     email,
     phone: input.phone?.trim(),
-    passwordHash: await bcryptjs.hash(password, 12),
+    passwordHash: await bcryptjs.hash(unusablePassword(), 12),
+    passwordSetupTokenHash: setup.tokenHash,
+    passwordSetupExpiresAt: setup.expiresAt,
     role: input.role,
     permissions:
       requested && requested.length > 0
@@ -96,22 +110,27 @@ export async function createStaff(input: {
     details: { email, role: input.role },
   })
 
+  const setupUrl = `${appUrl()}${passwordSetupPath(setup.token)}`
+
   const { sent } = await trySendEmail({
     to: email,
-    ...staffWelcomeEmail({
+    ...staffPasswordSetupEmail({
       name,
       email,
-      temporaryPassword: password,
       roleLabel: ROLE_LABELS[input.role],
+      setupUrl,
+      expiresInHours: PASSWORD_SETUP_TTL_HOURS,
+      reason: "invite",
     }),
   })
 
   revalidatePath("/dashboard/admins")
   revalidatePath("/dashboard/pastors")
 
-  // The password is returned so the super admin can pass it on by hand when
-  // email delivery is not configured or bounces.
-  return { ok: true, temporaryPassword: password, emailSent: sent }
+  // The link is returned so the super admin can pass it on by hand when email
+  // delivery is not configured or bounces. It is the same one-time link that
+  // was emailed — handing it over on WhatsApp is no weaker than the email.
+  return { ok: true, setupUrl, emailSent: sent }
 }
 
 export async function setStaffActive(input: {
@@ -412,9 +431,17 @@ export async function deleteStaff(input: {
   return { ok: true, reassigned, unassigned }
 }
 
+/**
+ * Send a staff member a fresh one-time link to choose a new password.
+ *
+ * Their existing password keeps working until the link is actually used —
+ * otherwise a reset whose email bounces would lock someone out with no way
+ * back in. A super admin who suspects an account is compromised should
+ * deactivate it, which is what actually shuts the door.
+ */
 export async function resetStaffPassword(input: {
   userId: string
-}): Promise<Result<{ temporaryPassword: string; emailSent: boolean }>> {
+}): Promise<Result<{ setupUrl: string; emailSent: boolean }>> {
   const actor = await requireSuperAdminUser()
   if (!actor) {
     return { ok: false, error: "Only a super admin can reset a password." }
@@ -427,8 +454,11 @@ export async function resetStaffPassword(input: {
     return { ok: false, error: "That account could not be found." }
   }
 
-  const password = temporaryPassword()
-  user.passwordHash = await bcryptjs.hash(password, 12)
+  // Minting a new token invalidates any link sent earlier: only the newest
+  // hash is stored, so the previous one stops matching.
+  const setup = generatePasswordSetupToken()
+  user.passwordSetupTokenHash = setup.tokenHash
+  user.passwordSetupExpiresAt = setup.expiresAt
   await user.save()
 
   await logActivity({
@@ -439,15 +469,19 @@ export async function resetStaffPassword(input: {
     details: { email: user.email },
   })
 
+  const setupUrl = `${appUrl()}${passwordSetupPath(setup.token)}`
+
   const { sent } = await trySendEmail({
     to: user.email,
-    ...staffWelcomeEmail({
+    ...staffPasswordSetupEmail({
       name: user.name,
       email: user.email,
-      temporaryPassword: password,
       roleLabel: ROLE_LABELS[user.role],
+      setupUrl,
+      expiresInHours: PASSWORD_SETUP_TTL_HOURS,
+      reason: "reset",
     }),
   })
 
-  return { ok: true, temporaryPassword: password, emailSent: sent }
+  return { ok: true, setupUrl, emailSent: sent }
 }

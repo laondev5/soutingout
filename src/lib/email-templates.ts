@@ -185,26 +185,57 @@ export function delegateUnassignedEmail(input: {
 }
 
 /** Credentials for a newly created sub-admin or pastor. */
-export function staffWelcomeEmail(input: {
+/**
+ * The one-time link a staff member uses to choose their own password.
+ *
+ * No password is ever put in an email: the link is single-use and expires, so
+ * an old message sitting in an inbox is not a standing key to the dashboard.
+ */
+export function staffPasswordSetupEmail(input: {
   name: string
   email: string
-  temporaryPassword: string
   roleLabel: string
+  setupUrl: string
+  expiresInHours: number
+  /** An existing account being reset, rather than a brand new one. */
+  reason: "invite" | "reset"
 }) {
+  const isInvite = input.reason === "invite"
+
+  const opening = isInvite
+    ? `<p>An account has been created for you as <strong>${escapeHtml(input.roleLabel)}</strong> on the ${escapeHtml(EVENT.shortName)} dashboard.</p>
+       <p>Use the button below to choose your password and finish setting the account up.</p>`
+    : `<p>A password reset was requested for your <strong>${escapeHtml(input.roleLabel)}</strong> account on the ${escapeHtml(EVENT.shortName)} dashboard.</p>
+       <p>Use the button below to choose a new password.</p>`
+
   const body = `
     <p>Hello ${escapeHtml(input.name)},</p>
-    <p>An account has been created for you as <strong>${escapeHtml(input.roleLabel)}</strong> on the ${escapeHtml(EVENT.shortName)} dashboard.</p>
+    ${opening}
     <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px;font-size:14px;line-height:1.7;">
-      <tr><td style="color:#71717a;padding-right:12px;">Email</td><td>${escapeHtml(input.email)}</td></tr>
-      <tr><td style="color:#71717a;padding-right:12px;">Temporary password</td><td><strong style="font-family:ui-monospace,Menlo,monospace;">${escapeHtml(input.temporaryPassword)}</strong></td></tr>
+      <tr><td style="color:#71717a;padding-right:12px;">Sign in as</td><td>${escapeHtml(input.email)}</td></tr>
     </table>
-    <p><a href="${appUrl("/auth/login")}" style="display:inline-block;padding:11px 20px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;">Sign in</a></p>
-    <p style="color:#71717a;font-size:13px;">Please change this password after your first sign-in.</p>`
+    <p style="margin:0 0 18px;"><a href="${input.setupUrl}" style="display:inline-block;padding:11px 20px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;">${isInvite ? "Set my password" : "Choose a new password"}</a></p>
+    <p style="color:#71717a;font-size:13px;">This link works once and expires in ${input.expiresInHours} hours. If it has already expired, ask a super admin to send you another.</p>
+    <p style="color:#71717a;font-size:13px;">If the button does not work, paste this into your browser:<br /><a href="${input.setupUrl}" style="color:#71717a;word-break:break-all;">${input.setupUrl}</a></p>
+    ${
+      isInvite
+        ? ""
+        : `<p style="color:#71717a;font-size:13px;">Did not ask for this? Your current password still works and you can ignore this email.</p>`
+    }`
 
   return {
-    subject: `Your ${EVENT.shortName} dashboard account`,
-    html: layout({ heading: "Your dashboard account", body }),
-    text: `Hello ${input.name},\n\nAn account has been created for you as ${input.roleLabel}.\n\nEmail: ${input.email}\nTemporary password: ${input.temporaryPassword}\n\nSign in: ${appUrl("/auth/login")}\n\nPlease change this password after your first sign-in.`,
+    subject: isInvite
+      ? `Set up your ${EVENT.shortName} dashboard account`
+      : `Reset your ${EVENT.shortName} dashboard password`,
+    html: layout({
+      heading: isInvite ? "Set up your account" : "Reset your password",
+      body,
+    }),
+    text: `Hello ${input.name},\n\n${
+      isInvite
+        ? `An account has been created for you as ${input.roleLabel} on the ${EVENT.shortName} dashboard.`
+        : `A password reset was requested for your ${input.roleLabel} account.`
+    }\n\nSign in as: ${input.email}\n\nChoose your password here (works once, expires in ${input.expiresInHours} hours):\n${input.setupUrl}`,
   }
 }
 

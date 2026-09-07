@@ -10,6 +10,7 @@ export const metadata: Metadata = {
 export default async function LoginPage({ searchParams }: PageProps<"/auth/login">) {
   const params = await searchParams
   const next = typeof params.next === "string" ? params.next : undefined
+  const passwordSet = params.passwordSet === "1"
 
   return (
     <main className="flex flex-1 items-center justify-center px-6 py-16">
@@ -21,6 +22,12 @@ export default async function LoginPage({ searchParams }: PageProps<"/auth/login
         <p className="mt-2 text-sm text-muted-foreground">
           For retreat staff — super admins, sub-admins and pastors.
         </p>
+
+        {passwordSet ? (
+          <p className="mt-5 rounded-lg border border-emerald-600/30 bg-emerald-600/10 px-3 py-2.5 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+            Password set. Sign in with it below.
+          </p>
+        ) : null}
 
         <div className="mt-8">
           <LoginForm next={next} />

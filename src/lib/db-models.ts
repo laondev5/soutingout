@@ -57,6 +57,13 @@ export interface IUser extends Timestamps {
   maxDelegates: number
   createdByUserId?: Types.ObjectId | null
   lastLoginAt?: Date | null
+  /**
+   * SHA-256 of the outstanding set-password link's token, cleared the moment
+   * the link is used — which is what makes the link one-time. The hash rather
+   * than the token itself, so a database leak cannot be replayed as a link.
+   */
+  passwordSetupTokenHash?: string | null
+  passwordSetupExpiresAt?: Date | null
 }
 
 const userSchema = new Schema<IUser>(
@@ -71,11 +78,20 @@ const userSchema = new Schema<IUser>(
     maxDelegates: { type: Number, default: 0, min: 0 },
     createdByUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
     lastLoginAt: { type: Date, default: null },
+    passwordSetupTokenHash: { type: String, default: null },
+    passwordSetupExpiresAt: { type: Date, default: null },
   },
   { timestamps: true }
 )
 
 userSchema.index({ role: 1, isActive: 1 })
+
+// Redeeming a link looks the account up by this hash. Partial, because most
+// accounts have no outstanding link and nulls are not worth indexing.
+userSchema.index(
+  { passwordSetupTokenHash: 1 },
+  { partialFilterExpression: { passwordSetupTokenHash: { $type: "string" } } }
+)
 
 export const UserModel = model<IUser>("User", userSchema)
 

@@ -3,6 +3,7 @@
 import { Fragment, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
+  Copy,
   KeyRound,
   Loader2,
   MoreHorizontal,
@@ -109,6 +110,11 @@ export function StaffManager({
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [successorId, setSuccessorId] = useState("")
 
+  // Shown only when the email did not go out — the same one-time link, for the
+  // super admin to pass on by hand. A toast is no good for a URL: it cannot be
+  // copied and it disappears.
+  const [fallbackLink, setFallbackLink] = useState<{ name: string; url: string } | null>(null)
+
   const noun = role === "pastor" ? "pastor" : "sub-admin"
 
   function onCreate() {
@@ -126,14 +132,15 @@ export function StaffManager({
         return
       }
 
-      // Always surface the password: email may be unconfigured or may bounce,
-      // and the super admin needs a way to hand it over regardless.
-      toast.success(
-        result.emailSent
-          ? `${name} created and emailed their sign-in details.`
-          : `${name} created. Temporary password: ${result.temporaryPassword}`,
-        { duration: result.emailSent ? 5000 : 30000 }
-      )
+      if (result.emailSent) {
+        toast.success(`${name} created. A link to set their password has been emailed.`)
+        setFallbackLink(null)
+      } else {
+        // Email is unconfigured or bounced — the super admin still needs a way
+        // to get the person in, so hand them the link to pass on.
+        toast.warning(`${name} created, but the email could not be sent. Share the link below.`)
+        setFallbackLink({ name, url: result.setupUrl })
+      }
 
       setName("")
       setEmail("")
@@ -163,12 +170,13 @@ export function StaffManager({
         toast.error(result.error)
         return
       }
-      toast.success(
-        result.emailSent
-          ? `New password emailed to ${row.email}.`
-          : `New password for ${row.name}: ${result.temporaryPassword}`,
-        { duration: result.emailSent ? 5000 : 30000 }
-      )
+      if (result.emailSent) {
+        toast.success(`A link to choose a new password has been emailed to ${row.email}.`)
+        setFallbackLink(null)
+      } else {
+        toast.warning(`Could not email ${row.email}. Share the link below instead.`)
+        setFallbackLink({ name: row.name, url: result.setupUrl })
+      }
     })
   }
 
@@ -258,6 +266,43 @@ export function StaffManager({
         </Button>
       </div>
 
+      {fallbackLink ? (
+        <Card className="border-amber-500/40 bg-amber-500/5">
+          <CardHeader>
+            <CardTitle className="text-base">
+              Send this link to {fallbackLink.name}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              The email did not go out, so pass this on yourself. It lets them set their own
+              password once, then stops working.
+            </p>
+            <code className="block overflow-x-auto rounded-lg border bg-background px-3 py-2 font-mono text-xs">
+              {fallbackLink.url}
+            </code>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(fallbackLink.url)
+                    toast.success("Link copied.")
+                  } catch {
+                    toast.error("Could not copy — select the link and copy it by hand.")
+                  }
+                }}
+              >
+                <Copy className="size-4" /> Copy link
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setFallbackLink(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {showForm ? (
         <Card>
           <CardHeader>
@@ -301,8 +346,8 @@ export function StaffManager({
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              A temporary password is generated and emailed to them. They should change it after
-              their first sign-in.
+              They are emailed a one-time link to choose their own password. No password is sent by
+              email, and the link expires after 3 days.
             </p>
             <Button onClick={onCreate} disabled={pending || !name || !email}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : null}
