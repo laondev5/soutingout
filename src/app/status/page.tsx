@@ -17,9 +17,23 @@ export const metadata: Metadata = {
   title: "Check your status",
 }
 
+/**
+ * Read one query value, whichever shape it arrives in.
+ *
+ * Paystack appends its own `reference` and `trxref` to whatever callback URL
+ * it was given, so a callback that already carried `?reference=` comes back
+ * with the key repeated — and a repeated key is an array, not a string.
+ * Reading it as a string alone silently missed every real return trip.
+ */
+function firstParam(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return value[0]
+  return value
+}
+
 export default async function StatusPage({ searchParams }: PageProps<"/status">) {
   const params = await searchParams
-  const reference = typeof params.reference === "string" ? params.reference : undefined
+  // `trxref` is Paystack's own name for the same value, sent alongside it.
+  const reference = firstParam(params.reference) ?? firstParam(params.trxref)
 
   // Paystack sends the delegate back here with their reference. Settle that
   // one before rendering. A payment that just confirmed sends them straight
@@ -68,7 +82,7 @@ export default async function StatusPage({ searchParams }: PageProps<"/status">)
         </div>
       </div>
 
-      <div className="px-6 py-10">
+      <div className="px-6 pt-10 pb-28">
         <StatusClient
           paystackEnabled={isPaystackConfigured()}
           uploadsEnabled={isCloudinaryConfigured()}

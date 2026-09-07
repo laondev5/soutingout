@@ -75,7 +75,10 @@ export async function initializePayment(input: {
       email: delegate.email,
       amountNaira: payAmount,
       reference,
-      callbackUrl: `${appUrl()}/status?reference=${encodeURIComponent(reference)}`,
+      // No `?reference=` of our own: Paystack appends its own `reference` and
+      // `trxref` to this URL, and adding ours made the key repeat — which
+      // arrives as an array and used to defeat the check on the other end.
+      callbackUrl: `${appUrl()}/status`,
       metadata: {
         delegateId: String(delegate._id),
         fullName: delegate.fullName,
